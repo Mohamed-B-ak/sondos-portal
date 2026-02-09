@@ -6,7 +6,7 @@
 // Frontend authenticates with auth_token only.
 // =====================================================
 
-const BACKEND_API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+const BACKEND_API_BASE = '/api';
 const SONDOS_PROXY_BASE = `${BACKEND_API_BASE}/sondos`;
 
 // ==================== Auth Token Helper ====================

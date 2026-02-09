@@ -42,7 +42,7 @@ export default function IntegrationsPage() {
   const sendNotification = async (title, message, type = 'info') => {
     const token = localStorage.getItem('auth_token');
     if (!token) return;
-    const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+    const API_BASE = '/api';
     try {
       await fetch(`${API_BASE}/notifications`, {
         method: 'POST',

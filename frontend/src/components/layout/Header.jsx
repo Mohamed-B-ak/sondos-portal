@@ -3,7 +3,7 @@ import { Search, Bell, Sun, Moon, CheckCircle2, AlertTriangle, XCircle, Info, Ch
 import { useTheme } from '@/hooks/useTheme';
 import { useLanguage } from '@/hooks/useLanguage';
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+const API_BASE = '/api';
 
 // Time ago - translated
 const timeAgo = (date, t) => {

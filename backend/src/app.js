@@ -16,6 +16,9 @@ const sondosRoutes = require('./routes/sondos.routes');
 
 const app = express();
 
+// ✅ IMPORTANT FOR RENDER + RATE LIMIT
+app.set('trust proxy', 1);
+
 // ==================== CORS — Environment-aware ====================
 const isProduction = process.env.NODE_ENV === 'production';
 

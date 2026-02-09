@@ -2,6 +2,7 @@
 // Sondos AI Backend — Express App (PRODUCTION READY)
 // =====================================================
 const express = require('express');
+const path = require('path');
 const cors = require('cors');
 const { errorHandler, notFound } = require('./middleware/errorHandler');
 const { loginLimiter, registerLimiter, apiLimiter } = require('./middleware/rateLimiter');
@@ -19,20 +20,21 @@ const app = express();
 const isProduction = process.env.NODE_ENV === 'production';
 
 const allowedOrigins = isProduction
-  ? [process.env.FRONTEND_URL].filter(Boolean)                    // ✅ Production: only real domain
-  : ['http://localhost:5173', 'http://localhost:5174',             // ✅ Dev: localhost allowed
+  ? [process.env.FRONTEND_URL].filter(Boolean)
+  : ['http://localhost:5173', 'http://localhost:5174',
      process.env.FRONTEND_URL].filter(Boolean);
 
 app.use(cors({
   origin: (origin, callback) => {
-    // Allow requests with no origin (mobile apps, curl, Postman in dev)
-    if (!origin && !isProduction) return callback(null, true);
-    if (!origin && isProduction) return callback(null, false);
+    // In production: allow same-origin (no origin header) since frontend is served from same server
+    if (!origin) return callback(null, true);
 
     if (allowedOrigins.includes(origin)) {
       return callback(null, true);
     }
 
+    // In dev, allow all; in production, block unknown origins
+    if (!isProduction) return callback(null, true);
     return callback(new Error('غير مسموح من هذا المصدر (CORS)'));
   },
   credentials: true,
@@ -53,14 +55,6 @@ if (!isProduction) {
 }
 
 // ==================== Health Check ====================
-app.get('/', (req, res) => {
-  res.json({
-    success: true,
-    message: 'Sondos AI Backend API',
-    version: '2.1.0',
-  });
-});
-
 app.get('/api/health', (req, res) => {
   res.json({
     success: true,
@@ -70,8 +64,6 @@ app.get('/api/health', (req, res) => {
 });
 
 // ==================== Routes with Rate Limiting ====================
-
-// ✅ Rate limiters are now APPLIED (not just imported)
 app.use('/api/auth/login', loginLimiter);
 app.use('/api/auth/register', registerLimiter);
 app.use('/api', apiLimiter);
@@ -91,12 +83,36 @@ app.use('/api/notifications', notificationRoutes);
 // Sondos API Proxy (Frontend → Backend → Sondos)
 app.use('/api/sondos', sondosRoutes);
 
-// ⛔ Backward compatibility routes REMOVED
-// Old frontend should be updated to use /api/user/* and /api/admin/*
-// Keeping them doubles the attack surface and bypasses route-level security
+// ==================== API 404 (before static files) ====================
+app.all('/api/*', (req, res) => {
+  res.status(404).json({ success: false, message: 'API endpoint not found' });
+});
 
-// ==================== Error Handling ====================
-app.use(notFound);
+// ==================== Serve Frontend in Production ====================
+if (isProduction) {
+  const frontendDist = path.join(__dirname, '../../frontend/dist');
+
+  // Serve static files (JS, CSS, images)
+  app.use(express.static(frontendDist));
+
+  // SPA Fallback — React Router handles all non-API routes
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(frontendDist, 'index.html'));
+  });
+} else {
+  // Dev: show API info on root
+  app.get('/', (req, res) => {
+    res.json({
+      success: true,
+      message: 'Sondos AI Backend API',
+      version: '2.1.0',
+    });
+  });
+
+  // Error Handling (dev only — production uses SPA fallback)
+  app.use(notFound);
+}
+
 app.use(errorHandler);
 
 module.exports = app;

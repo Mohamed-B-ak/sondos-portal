@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { 
   Users, 
   Globe, 
@@ -16,15 +17,109 @@ import {
   CheckCircle,
   AlertCircle,
   Eye,
-  EyeOff
+  EyeOff,
+  Wallet
 } from "lucide-react";
 import { useTheme } from "@/hooks/useTheme";
 import { useLanguage } from "@/hooks/useLanguage";
 import { authAPI, getStoredUser } from "@/services/api/authAPI";
-
-// Timezones defined inside component for translation access
+import BalancePage from "./BalancePage";
+import APISettingsPage from "./APISettingsPage";
 
 export default function SettingsPage() {
+  const { isDark } = useTheme();
+  const { t, isAr } = useLanguage();
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  // Get initial tab from URL query param
+  const getTabFromURL = () => {
+    const params = new URLSearchParams(location.search);
+    const tab = params.get('tab');
+    if (tab === 'balance' || tab === 'api') return tab;
+    return 'general';
+  };
+
+  const [activeTab, setActiveTab] = useState(getTabFromURL);
+
+  // Sync if URL changes (e.g. browser back/forward)
+  useEffect(() => {
+    setActiveTab(getTabFromURL());
+  }, [location.search]);
+
+  const handleTabChange = (tabId) => {
+    setActiveTab(tabId);
+    if (tabId === 'general') {
+      navigate('/settings', { replace: true });
+    } else {
+      navigate(`/settings?tab=${tabId}`, { replace: true });
+    }
+  };
+
+  const tabs = [
+    { id: 'general', icon: Settings, label: t('sett.tabGeneral') },
+    { id: 'balance', icon: Wallet, label: t('sett.tabBalance') },
+    { id: 'api', icon: Key, label: t('sett.tabApi') },
+  ];
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div>
+        <h1 className={`text-3xl font-bold mb-2 ${isDark ? 'text-white' : 'text-gray-900'}`}>
+          {t('sett.title')}
+        </h1>
+        <p className={isDark ? 'text-gray-400' : 'text-gray-500'}>
+          {t('sett.subtitle')}
+        </p>
+      </div>
+
+      {/* ===== Tabs ===== */}
+      <div className={`flex gap-1 p-1.5 rounded-2xl ${
+        isDark 
+          ? 'bg-[#111113] border border-[#1f1f23]' 
+          : 'bg-gray-100 border border-gray-200'
+      }`}>
+        {tabs.map((tab) => {
+          const isActive = activeTab === tab.id;
+          const Icon = tab.icon;
+          return (
+            <button
+              key={tab.id}
+              onClick={() => handleTabChange(tab.id)}
+              className={`flex items-center justify-center gap-2.5 px-6 py-3 rounded-xl font-medium transition-all duration-200 flex-1 ${
+                isActive
+                  ? isDark
+                    ? 'bg-[#1a1a1d] text-teal-400 shadow-sm border border-[#2a2a2d]'
+                    : 'bg-white text-teal-600 shadow-sm border border-gray-200'
+                  : isDark
+                    ? 'text-gray-500 hover:text-gray-300 hover:bg-[#0f0f10]'
+                    : 'text-gray-500 hover:text-gray-700 hover:bg-white/50'
+              }`}
+            >
+              <Icon className="w-[18px] h-[18px]" />
+              <span className="text-sm">{tab.label}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* ===== Tab Content ===== */}
+      <div>
+        {activeTab === 'general' && <GeneralSettings />}
+        {activeTab === 'balance' && <BalancePage />}
+        {activeTab === 'api' && <APISettingsPage />}
+      </div>
+    </div>
+  );
+}
+
+
+// =====================================================================
+//  General Settings Tab (original settings content extracted)
+// =====================================================================
+
+function GeneralSettings() {
   const { isDark } = useTheme();
   const { t, isAr } = useLanguage();
 
@@ -44,13 +139,11 @@ export default function SettingsPage() {
     { value: 'Africa/Algiers', label: t('sett.tzAlgiers') },
   ];
 
-  // User data state
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState({ type: '', text: '' });
   
-  // Form data
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -59,7 +152,6 @@ export default function SettingsPage() {
     timezone: 'Asia/Riyadh',
   });
   
-  // Password change
   const [passwordData, setPasswordData] = useState({
     currentPassword: '',
     newPassword: '',
@@ -72,7 +164,6 @@ export default function SettingsPage() {
   });
   const [changingPassword, setChangingPassword] = useState(false);
   
-  // Settings toggles
   const [settings, setSettings] = useState({
     autoReply: true,
     recordCalls: true,
@@ -81,7 +172,6 @@ export default function SettingsPage() {
     weeklyReport: true,
   });
 
-  // Load user data on mount
   useEffect(() => {
     loadUserData();
   }, []);
@@ -89,14 +179,11 @@ export default function SettingsPage() {
   const loadUserData = async () => {
     setLoading(true);
     try {
-      // First try to get from localStorage
       let userData = getStoredUser();
       
-      // Then fetch fresh data from backend
       const response = await authAPI.me();
       if (response.success && response.data) {
         userData = response.data;
-        // Update localStorage
         localStorage.setItem('user', JSON.stringify(userData));
       }
       
@@ -110,17 +197,12 @@ export default function SettingsPage() {
           timezone: userData.timezone || 'Asia/Riyadh',
         });
         
-        // Load settings if available
         if (userData.settings) {
-          setSettings(prev => ({
-            ...prev,
-            ...userData.settings,
-          }));
+          setSettings(prev => ({ ...prev, ...userData.settings }));
         }
       }
     } catch (error) {
       console.error('Error loading user data:', error);
-      // Fall back to localStorage
       const userData = getStoredUser();
       if (userData) {
         setUser(userData);
@@ -157,10 +239,7 @@ export default function SettingsPage() {
       
       if (response.success) {
         setMessage({ type: 'success', text: t('sett.savedSuccess') });
-        // Update local user state
-        if (response.data) {
-          setUser(response.data);
-        }
+        if (response.data) setUser(response.data);
       } else {
         setMessage({ type: 'error', text: response.message || t('sett.saveError') });
       }
@@ -173,7 +252,6 @@ export default function SettingsPage() {
   };
 
   const handlePasswordChange = async () => {
-    // Validation
     if (!passwordData.currentPassword) {
       setMessage({ type: 'error', text: t('sett.enterCurrentPassword') });
       return;
@@ -214,7 +292,6 @@ export default function SettingsPage() {
     setSettings(prev => ({ ...prev, [key]: !prev[key] }));
   };
 
-  // Loading state
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
@@ -225,12 +302,6 @@ export default function SettingsPage() {
 
   return (
     <div className="space-y-8">
-      {/* Header */}
-      <div>
-        <h1 className={`text-3xl font-bold mb-2 ${isDark ? 'text-white' : 'text-gray-900'}`}>{t('sett.title')}</h1>
-        <p className={isDark ? 'text-gray-400' : 'text-gray-500'}>{t('sett.subtitle')}</p>
-      </div>
-
       {/* Message */}
       {message.text && (
         <div className={`flex items-center gap-3 p-4 rounded-xl ${
@@ -251,37 +322,10 @@ export default function SettingsPage() {
             {t('sett.accountInfo')}
           </h3>
           <div className="space-y-4">
-            <InputField 
-              icon={User}
-              label={t('sett.fullName')} 
-              value={formData.name}
-              onChange={(e) => handleInputChange('name', e.target.value)}
-              isDark={isDark}
-            />
-            <InputField 
-              icon={Mail}
-              label={t('sett.email')} 
-              type="email"
-              value={formData.email}
-              disabled={true}
-              hint={t('sett.emailHint')}
-              isDark={isDark}
-            />
-            <InputField 
-              icon={Phone}
-              label={t('sett.phone')} 
-              type="tel"
-              value={formData.phone}
-              onChange={(e) => handleInputChange('phone', e.target.value)}
-              isDark={isDark}
-            />
-            <InputField 
-              icon={Building}
-              label={t('sett.company')} 
-              value={formData.company}
-              onChange={(e) => handleInputChange('company', e.target.value)}
-              isDark={isDark}
-            />
+            <InputField icon={User} label={t('sett.fullName')} value={formData.name} onChange={(e) => handleInputChange('name', e.target.value)} isDark={isDark} />
+            <InputField icon={Mail} label={t('sett.email')} type="email" value={formData.email} disabled={true} hint={t('sett.emailHint')} isDark={isDark} />
+            <InputField icon={Phone} label={t('sett.phone')} type="tel" value={formData.phone} onChange={(e) => handleInputChange('phone', e.target.value)} isDark={isDark} />
+            <InputField icon={Building} label={t('sett.company')} value={formData.company} onChange={(e) => handleInputChange('company', e.target.value)} isDark={isDark} />
           </div>
         </div>
 
@@ -292,33 +336,9 @@ export default function SettingsPage() {
             {t('sett.langAndTime')}
           </h3>
           <div className="space-y-4">
-            <SelectField 
-              label={t('sett.defaultLang')}
-              value={t('sett.arabic')}
-              options={[
-                { value: 'ar', label: t('sett.arabic') },
-                { value: 'en', label: 'English' },
-              ]}
-              disabled={true}
-              isDark={isDark}
-            />
-            <SelectField 
-              label={t('sett.timezone')}
-              value={formData.timezone}
-              onChange={(e) => handleInputChange('timezone', e.target.value)}
-              options={TIMEZONES}
-              isDark={isDark}
-            />
-            <SelectField 
-              label={t('sett.dateFormat')}
-              value="dd/mm/yyyy"
-              options={[
-                { value: 'dd/mm/yyyy', label: t('sett.dmy') },
-                { value: 'mm/dd/yyyy', label: t('sett.mdy') },
-                { value: 'yyyy/mm/dd', label: t('sett.ymd') },
-              ]}
-              isDark={isDark}
-            />
+            <SelectField label={t('sett.defaultLang')} value={t('sett.arabic')} options={[{ value: 'ar', label: t('sett.arabic') }, { value: 'en', label: 'English' }]} disabled={true} isDark={isDark} />
+            <SelectField label={t('sett.timezone')} value={formData.timezone} onChange={(e) => handleInputChange('timezone', e.target.value)} options={TIMEZONES} isDark={isDark} />
+            <SelectField label={t('sett.dateFormat')} value="dd/mm/yyyy" options={[{ value: 'dd/mm/yyyy', label: t('sett.dmy') }, { value: 'mm/dd/yyyy', label: t('sett.mdy') }, { value: 'yyyy/mm/dd', label: t('sett.ymd') }]} isDark={isDark} />
           </div>
         </div>
 
@@ -329,82 +349,10 @@ export default function SettingsPage() {
             {t('sett.changePassword')}
           </h3>
           <div className="space-y-4">
+            <PasswordField label={t('sett.currentPassword')} value={passwordData.currentPassword} onChange={(e) => setPasswordData(prev => ({ ...prev, currentPassword: e.target.value }))} show={showPasswords.current} onToggle={() => setShowPasswords(prev => ({ ...prev, current: !prev.current }))} isDark={isDark} />
+            <PasswordField label={t('sett.newPassword')} value={passwordData.newPassword} onChange={(e) => setPasswordData(prev => ({ ...prev, newPassword: e.target.value }))} show={showPasswords.new} onToggle={() => setShowPasswords(prev => ({ ...prev, new: !prev.new }))} isDark={isDark} />
             <div>
-              <label className={`block text-sm font-medium mb-2 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
-                {t('sett.currentPassword')}
-              </label>
-              <div className="relative">
-                <Key className={`absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 ${isDark ? 'text-gray-500' : 'text-gray-400'}`} />
-                <input
-                  type={showPasswords.current ? "text" : "password"}
-                  value={passwordData.currentPassword}
-                  onChange={(e) => setPasswordData(prev => ({ ...prev, currentPassword: e.target.value }))}
-                  className={`w-full pr-11 pl-11 py-3 rounded-xl border focus:outline-none focus:ring-2 focus:ring-teal-500/50 ${
-                    isDark 
-                      ? 'bg-[#0a0a0b] border-[#1f1f23] text-white' 
-                      : 'bg-gray-50 border-gray-200 text-gray-900'
-                  }`}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPasswords(prev => ({ ...prev, current: !prev.current }))}
-                  className={`absolute left-3 top-1/2 -translate-y-1/2 ${isDark ? 'text-gray-500 hover:text-gray-400' : 'text-gray-400 hover:text-gray-600'}`}
-                >
-                  {showPasswords.current ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                </button>
-              </div>
-            </div>
-            
-            <div>
-              <label className={`block text-sm font-medium mb-2 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
-                {t('sett.newPassword')}
-              </label>
-              <div className="relative">
-                <Key className={`absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 ${isDark ? 'text-gray-500' : 'text-gray-400'}`} />
-                <input
-                  type={showPasswords.new ? "text" : "password"}
-                  value={passwordData.newPassword}
-                  onChange={(e) => setPasswordData(prev => ({ ...prev, newPassword: e.target.value }))}
-                  className={`w-full pr-11 pl-11 py-3 rounded-xl border focus:outline-none focus:ring-2 focus:ring-teal-500/50 ${
-                    isDark 
-                      ? 'bg-[#0a0a0b] border-[#1f1f23] text-white' 
-                      : 'bg-gray-50 border-gray-200 text-gray-900'
-                  }`}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPasswords(prev => ({ ...prev, new: !prev.new }))}
-                  className={`absolute left-3 top-1/2 -translate-y-1/2 ${isDark ? 'text-gray-500 hover:text-gray-400' : 'text-gray-400 hover:text-gray-600'}`}
-                >
-                  {showPasswords.new ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                </button>
-              </div>
-            </div>
-            
-            <div>
-              <label className={`block text-sm font-medium mb-2 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
-                {t('sett.confirmPassword')}
-              </label>
-              <div className="relative">
-                <Key className={`absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 ${isDark ? 'text-gray-500' : 'text-gray-400'}`} />
-                <input
-                  type={showPasswords.confirm ? "text" : "password"}
-                  value={passwordData.confirmPassword}
-                  onChange={(e) => setPasswordData(prev => ({ ...prev, confirmPassword: e.target.value }))}
-                  className={`w-full pr-11 pl-11 py-3 rounded-xl border focus:outline-none focus:ring-2 focus:ring-teal-500/50 ${
-                    isDark 
-                      ? 'bg-[#0a0a0b] border-[#1f1f23] text-white' 
-                      : 'bg-gray-50 border-gray-200 text-gray-900'
-                  }`}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPasswords(prev => ({ ...prev, confirm: !prev.confirm }))}
-                  className={`absolute left-3 top-1/2 -translate-y-1/2 ${isDark ? 'text-gray-500 hover:text-gray-400' : 'text-gray-400 hover:text-gray-600'}`}
-                >
-                  {showPasswords.confirm ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                </button>
-              </div>
+              <PasswordField label={t('sett.confirmPassword')} value={passwordData.confirmPassword} onChange={(e) => setPasswordData(prev => ({ ...prev, confirmPassword: e.target.value }))} show={showPasswords.confirm} onToggle={() => setShowPasswords(prev => ({ ...prev, confirm: !prev.confirm }))} isDark={isDark} />
               {passwordData.confirmPassword && passwordData.newPassword !== passwordData.confirmPassword && (
                 <p className="text-red-500 text-xs mt-1">{t('sett.passwordMismatch')}</p>
               )}
@@ -441,27 +389,9 @@ export default function SettingsPage() {
             {t('sett.notifications')}
           </h3>
           <div className="space-y-4">
-            <ToggleItem 
-              title={t('sett.emailNotifications')}
-              description={t('sett.emailNotificationsDesc')}
-              enabled={settings.emailNotifications}
-              onToggle={() => toggleSetting('emailNotifications')}
-              isDark={isDark}
-            />
-            <ToggleItem 
-              title={t('sett.smsNotifications')}
-              description={t('sett.smsNotificationsDesc')}
-              enabled={settings.smsNotifications}
-              onToggle={() => toggleSetting('smsNotifications')}
-              isDark={isDark}
-            />
-            <ToggleItem 
-              title={t('sett.weeklyReport')}
-              description={t('sett.weeklyReportDesc')}
-              enabled={settings.weeklyReport}
-              onToggle={() => toggleSetting('weeklyReport')}
-              isDark={isDark}
-            />
+            <ToggleItem title={t('sett.emailNotifications')} description={t('sett.emailNotificationsDesc')} enabled={settings.emailNotifications} onToggle={() => toggleSetting('emailNotifications')} isDark={isDark} />
+            <ToggleItem title={t('sett.smsNotifications')} description={t('sett.smsNotificationsDesc')} enabled={settings.smsNotifications} onToggle={() => toggleSetting('smsNotifications')} isDark={isDark} />
+            <ToggleItem title={t('sett.weeklyReport')} description={t('sett.weeklyReportDesc')} enabled={settings.weeklyReport} onToggle={() => toggleSetting('weeklyReport')} isDark={isDark} />
           </div>
         </div>
 
@@ -472,24 +402,12 @@ export default function SettingsPage() {
             {t('sett.assistantSettings')}
           </h3>
           <div className="space-y-4">
-            <ToggleItem 
-              title={t('sett.autoReply')}
-              description={t('sett.autoReplyDesc')}
-              enabled={settings.autoReply}
-              onToggle={() => toggleSetting('autoReply')}
-              isDark={isDark}
-            />
-            <ToggleItem 
-              title={t('sett.recordCalls')}
-              description={t('sett.recordCallsDesc')}
-              enabled={settings.recordCalls}
-              onToggle={() => toggleSetting('recordCalls')}
-              isDark={isDark}
-            />
+            <ToggleItem title={t('sett.autoReply')} description={t('sett.autoReplyDesc')} enabled={settings.autoReply} onToggle={() => toggleSetting('autoReply')} isDark={isDark} />
+            <ToggleItem title={t('sett.recordCalls')} description={t('sett.recordCallsDesc')} enabled={settings.recordCalls} onToggle={() => toggleSetting('recordCalls')} isDark={isDark} />
           </div>
         </div>
 
-        {/* Account Info Card */}
+        {/* Account Details Card */}
         <div className={`rounded-2xl p-6 ${isDark ? 'bg-[#111113] border border-[#1f1f23]' : 'bg-white border border-gray-200 shadow-sm'}`}>
           <h3 className={`text-lg font-bold mb-6 flex items-center gap-2 ${isDark ? 'text-white' : 'text-gray-900'}`}>
             <Shield className="w-5 h-5 text-emerald-400" />
@@ -499,15 +417,9 @@ export default function SettingsPage() {
             <div className={`flex items-center justify-between p-4 rounded-xl ${isDark ? 'bg-[#0a0a0b]' : 'bg-gray-50'}`}>
               <div>
                 <p className={`font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>{t('sett.accountStatus')}</p>
-                <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
-                  {user?.isActive ? t('sett.accountActive') : t('sett.accountInactive')}
-                </p>
+                <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>{user?.isActive ? t('sett.accountActive') : t('sett.accountInactive')}</p>
               </div>
-              <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                user?.isActive 
-                  ? 'bg-emerald-500/10 text-emerald-500' 
-                  : 'bg-red-500/10 text-red-500'
-              }`}>
+              <span className={`px-3 py-1 rounded-full text-xs font-medium ${user?.isActive ? 'bg-emerald-500/10 text-emerald-500' : 'bg-red-500/10 text-red-500'}`}>
                 {user?.isActive ? t('sett.active') : t('sett.inactive')}
               </span>
             </div>
@@ -515,15 +427,9 @@ export default function SettingsPage() {
             <div className={`flex items-center justify-between p-4 rounded-xl ${isDark ? 'bg-[#0a0a0b]' : 'bg-gray-50'}`}>
               <div>
                 <p className={`font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>{t('sett.accountType')}</p>
-                <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
-                  {user?.role === 'admin' ? t('sett.admin') : t('sett.client')}
-                </p>
+                <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>{user?.role === 'admin' ? t('sett.admin') : t('sett.client')}</p>
               </div>
-              <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                user?.role === 'admin' 
-                  ? 'bg-purple-500/10 text-purple-500' 
-                  : 'bg-teal-500/10 text-teal-500'
-              }`}>
+              <span className={`px-3 py-1 rounded-full text-xs font-medium ${user?.role === 'admin' ? 'bg-purple-500/10 text-purple-500' : 'bg-teal-500/10 text-teal-500'}`}>
                 {user?.role === 'admin' ? t('sett.admin') : t('sett.client')}
               </span>
             </div>
@@ -531,18 +437,14 @@ export default function SettingsPage() {
             <div className={`flex items-center justify-between p-4 rounded-xl ${isDark ? 'bg-[#0a0a0b]' : 'bg-gray-50'}`}>
               <div>
                 <p className={`font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>{t('sett.joinDate')}</p>
-                <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
-                  {user?.createdAt ? new Date(user.createdAt).toLocaleDateString(isAr ? 'ar-SA' : 'en-US') : '-'}
-                </p>
+                <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>{user?.createdAt ? new Date(user.createdAt).toLocaleDateString(isAr ? 'ar-SA' : 'en-US') : '-'}</p>
               </div>
             </div>
             
             <div className={`flex items-center justify-between p-4 rounded-xl ${isDark ? 'bg-[#0a0a0b]' : 'bg-gray-50'}`}>
               <div>
                 <p className={`font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>{t('sett.lastLogin')}</p>
-                <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
-                  {user?.lastLogin ? new Date(user.lastLogin).toLocaleString(isAr ? 'ar-SA' : 'en-US') : '-'}
-                </p>
+                <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>{user?.lastLogin ? new Date(user.lastLogin).toLocaleString(isAr ? 'ar-SA' : 'en-US') : '-'}</p>
               </div>
             </div>
           </div>
@@ -557,11 +459,7 @@ export default function SettingsPage() {
         <div className="flex items-center gap-3">
           <button 
             onClick={loadUserData}
-            className={`px-6 py-3 font-medium rounded-xl transition-colors border ${
-              isDark 
-                ? 'bg-[#1a1a1d] hover:bg-[#222225] text-white border-[#1f1f23]' 
-                : 'bg-gray-100 hover:bg-gray-200 text-gray-700 border-gray-200'
-            }`}
+            className={`px-6 py-3 font-medium rounded-xl transition-colors border ${isDark ? 'bg-[#1a1a1d] hover:bg-[#222225] text-white border-[#1f1f23]' : 'bg-gray-100 hover:bg-gray-200 text-gray-700 border-gray-200'}`}
           >
             {t('sett.discardChanges')}
           </button>
@@ -588,23 +486,18 @@ export default function SettingsPage() {
   );
 }
 
-// ================== المكونات المساعدة ==================
+// =====================================================================
+//  Shared helper components
+// =====================================================================
 
 function InputField({ icon: Icon, label, type = "text", value, onChange, disabled, hint, isDark }) {
   return (
     <div>
-      <label className={`block text-sm font-medium mb-2 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
-        {label}
-      </label>
+      <label className={`block text-sm font-medium mb-2 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>{label}</label>
       <div className="relative">
-        {Icon && (
-          <Icon className={`absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 ${isDark ? 'text-gray-500' : 'text-gray-400'}`} />
-        )}
+        {Icon && <Icon className={`absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 ${isDark ? 'text-gray-500' : 'text-gray-400'}`} />}
         <input
-          type={type}
-          value={value}
-          onChange={onChange}
-          disabled={disabled}
+          type={type} value={value} onChange={onChange} disabled={disabled}
           className={`w-full ${Icon ? 'pr-11' : 'px-4'} pl-4 py-3 rounded-xl border focus:outline-none focus:ring-2 focus:ring-teal-500/50 transition-all ${
             disabled 
               ? isDark ? 'bg-[#0a0a0b] border-[#1f1f23] text-gray-500 cursor-not-allowed' : 'bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed'
@@ -612,9 +505,7 @@ function InputField({ icon: Icon, label, type = "text", value, onChange, disable
           }`}
         />
       </div>
-      {hint && (
-        <p className={`text-xs mt-1 ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>{hint}</p>
-      )}
+      {hint && <p className={`text-xs mt-1 ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>{hint}</p>}
     </div>
   );
 }
@@ -622,13 +513,9 @@ function InputField({ icon: Icon, label, type = "text", value, onChange, disable
 function SelectField({ label, value, onChange, options, disabled, isDark }) {
   return (
     <div>
-      <label className={`block text-sm font-medium mb-2 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
-        {label}
-      </label>
+      <label className={`block text-sm font-medium mb-2 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>{label}</label>
       <select 
-        value={value}
-        onChange={onChange}
-        disabled={disabled}
+        value={value} onChange={onChange} disabled={disabled}
         className={`w-full px-4 py-3 rounded-xl border focus:outline-none focus:ring-2 focus:ring-teal-500/50 transition-all ${
           disabled
             ? isDark ? 'bg-[#0a0a0b] border-[#1f1f23] text-gray-500 cursor-not-allowed' : 'bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed'
@@ -636,11 +523,27 @@ function SelectField({ label, value, onChange, options, disabled, isDark }) {
         }`}
       >
         {options.map((option, i) => (
-          <option key={i} value={option.value || option}>
-            {option.label || option}
-          </option>
+          <option key={i} value={option.value || option}>{option.label || option}</option>
         ))}
       </select>
+    </div>
+  );
+}
+
+function PasswordField({ label, value, onChange, show, onToggle, isDark }) {
+  return (
+    <div>
+      <label className={`block text-sm font-medium mb-2 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>{label}</label>
+      <div className="relative">
+        <Key className={`absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 ${isDark ? 'text-gray-500' : 'text-gray-400'}`} />
+        <input
+          type={show ? "text" : "password"} value={value} onChange={onChange}
+          className={`w-full pr-11 pl-11 py-3 rounded-xl border focus:outline-none focus:ring-2 focus:ring-teal-500/50 ${isDark ? 'bg-[#0a0a0b] border-[#1f1f23] text-white' : 'bg-gray-50 border-gray-200 text-gray-900'}`}
+        />
+        <button type="button" onClick={onToggle} className={`absolute left-3 top-1/2 -translate-y-1/2 ${isDark ? 'text-gray-500 hover:text-gray-400' : 'text-gray-400 hover:text-gray-600'}`}>
+          {show ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+        </button>
+      </div>
     </div>
   );
 }
@@ -656,9 +559,7 @@ function ToggleItem({ title, description, enabled, onToggle, isDark }) {
         onClick={onToggle}
         className={`w-12 h-6 rounded-full relative transition-colors ${enabled ? 'bg-teal-500' : isDark ? 'bg-[#2a2a2d]' : 'bg-gray-300'}`}
       >
-        <span 
-          className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${enabled ? 'left-1' : 'right-1'}`} 
-        />
+        <span className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${enabled ? 'left-1' : 'right-1'}`} />
       </button>
     </div>
   );

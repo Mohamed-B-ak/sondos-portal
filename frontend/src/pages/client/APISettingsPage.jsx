@@ -351,6 +351,17 @@ export default function APISettingsPage({ embedded = false }) {
                           <span>{t('apiSettings.lastUsed')}: {lastUsed ? new Date(lastUsed).toLocaleDateString(isAr ? 'ar-SA' : 'en-US') : t('apiSettings.never')}</span>
                         </div>
                       </div>
+                      <button
+                        onClick={() => setDeleteTarget({ id, name })}
+                        className={`p-2 rounded-lg transition-colors shrink-0 ${
+                          isDark 
+                            ? 'hover:bg-red-500/10 text-gray-500 hover:text-red-400' 
+                            : 'hover:bg-red-50 text-gray-400 hover:text-red-500'
+                        }`}
+                        title={t('apiSettings.delete')}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
                     </div>
                   );
                 })}

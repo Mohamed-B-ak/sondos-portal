@@ -641,6 +641,9 @@
   "sett": {
     "title": "Settings",
     "subtitle": "Account and system settings",
+    "tabGeneral": "General",
+    "tabBalance": "Balance",
+    "tabApi": "API Settings",
     "savedSuccess": "Changes saved successfully",
     "saveError": "An error occurred while saving",
     "accountInfo": "Account Information",

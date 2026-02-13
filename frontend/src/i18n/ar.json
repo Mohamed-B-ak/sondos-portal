@@ -641,6 +641,9 @@
   "sett": {
     "title": "الإعدادات",
     "subtitle": "إعدادات الحساب والنظام",
+    "tabGeneral": "عام",
+    "tabBalance": "الرصيد",
+    "tabApi": "إعدادات API",
     "savedSuccess": "تم حفظ التغييرات بنجاح",
     "saveError": "حدث خطأ أثناء الحفظ",
     "accountInfo": "معلومات الحساب",

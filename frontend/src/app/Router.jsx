@@ -14,13 +14,11 @@ import RegisterPage from '@/pages/auth/RegisterPage';
 // Client pages
 import OverviewPage from '@/pages/client/OverviewPage';
 import DashboardPage from '@/pages/client/DashboardPage';
-import BalancePage from '@/pages/client/BalancePage';
 import LeadsPage from '@/pages/client/LeadsPage';
 import KnowledgePage from '@/pages/client/KnowledgePage';
 import SettingsPage from '@/pages/client/SettingsPage';
 import IntegrationsPage from '@/pages/client/IntegrationsPage';
 import AssistantSettingsPage from '@/pages/client/AssistantSettingsPage';
-import APISettingsPage from '@/pages/client/APISettingsPage';
 
 // Admin pages
 import AdminDashboardPage from '@/pages/admin/AdminDashboardPage';
@@ -70,13 +68,15 @@ export default function Router() {
         <Route element={<RequireAuth><AppLayout /></RequireAuth>}>
           <Route index element={<OverviewPage />} />
           <Route path="dashboard" element={<DashboardPage />} />
-          <Route path="balance" element={<BalancePage />} />
           <Route path="leads" element={<LeadsPage />} />
           <Route path="knowledge" element={<KnowledgePage />} />
           <Route path="assistant" element={<AssistantSettingsPage />} />
           <Route path="integrations" element={<IntegrationsPage />} />
-          <Route path="api-settings" element={<APISettingsPage />} />
           <Route path="settings" element={<SettingsPage />} />
+
+          {/* Redirects for old routes → settings tabs */}
+          <Route path="balance" element={<Navigate to="/settings?tab=balance" replace />} />
+          <Route path="api-settings" element={<Navigate to="/settings?tab=api" replace />} />
         </Route>
 
         {/* ── Admin routes ── */}

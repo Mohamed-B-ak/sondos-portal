@@ -1,10 +1,9 @@
 import { useState, useEffect } from 'react';
 import { 
-  Search, Plus, Eye, Edit, Trash2, 
-  Phone, Mail, Building, Calendar,
+  Search, Eye, Edit, Trash2, 
   Users, UserCheck, UserX, Loader2,
   X, Save, DollarSign, Send, CheckCircle,
-  AlertCircle, Key, RefreshCw, EyeOff, Copy, Check
+  AlertCircle, RefreshCw, Copy, Check, Timer, Coins
 } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
 import { adminAPI } from '@/services/api/adminAPI';
@@ -12,14 +11,11 @@ import { adminAPI } from '@/services/api/adminAPI';
 export default function AdminClientsPage() {
   const { isDark } = useTheme();
   const [clients, setClients] = useState([]);
+  const [allClients, setAllClients] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [pagination, setPagination] = useState({ page: 1, pages: 1, total: 0 });
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const [toast, setToast] = useState(null);
-
-  // Stats
-  const [stats, setStats] = useState({ total: 0, active: 0, inactive: 0 });
 
   // Modals
   const [viewClient, setViewClient] = useState(null);
@@ -31,18 +27,17 @@ export default function AdminClientsPage() {
   const [transferTarget, setTransferTarget] = useState(null);
   const [transferAmount, setTransferAmount] = useState('');
   const [transferOperation, setTransferOperation] = useState('add');
+  const [transferType, setTransferType] = useState('balance');
   const [transferring, setTransferring] = useState(false);
 
   // Edit form
   const [editForm, setEditForm] = useState({});
   const [saving, setSaving] = useState(false);
 
-  // Copy state
+  // Copy
   const [copiedField, setCopiedField] = useState(null);
 
-  useEffect(() => {
-    loadClients();
-  }, [filterStatus, pagination.page]);
+  useEffect(() => { loadClients(); }, []);
 
   useEffect(() => {
     if (toast) {
@@ -51,35 +46,31 @@ export default function AdminClientsPage() {
     }
   }, [toast]);
 
-  // Debounced search
+  // Client-side filtering
   useEffect(() => {
-    const timer = setTimeout(() => {
-      loadClients();
-    }, 400);
-    return () => clearTimeout(timer);
-  }, [searchQuery]);
+    let filtered = [...allClients];
+    
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      filtered = filtered.filter(u =>
+        u.name?.toLowerCase().includes(q) ||
+        u.email?.toLowerCase().includes(q) ||
+        u.phone?.includes(q) ||
+        u.company?.toLowerCase().includes(q)
+      );
+    }
+
+    if (filterStatus === 'active') filtered = filtered.filter(u => u.isActive);
+    if (filterStatus === 'inactive') filtered = filtered.filter(u => !u.isActive);
+
+    setClients(filtered);
+  }, [searchQuery, filterStatus, allClients]);
 
   const loadClients = async () => {
     setLoading(true);
     try {
-      const params = { page: pagination.page, limit: 20 };
-      if (searchQuery.trim()) params.search = searchQuery.trim();
-      if (filterStatus !== 'all') params.status = filterStatus;
-      params.role = 'client';
-
-      const res = await adminAPI.getUsers(params);
-      setClients(res.data.users);
-      setPagination(res.data.pagination);
-
-      // Also get total counts for stats
-      const allRes = await adminAPI.getUsers({ role: 'client', limit: 1 });
-      const activeRes = await adminAPI.getUsers({ role: 'client', status: 'active', limit: 1 });
-      const inactiveRes = await adminAPI.getUsers({ role: 'client', status: 'inactive', limit: 1 });
-      setStats({
-        total: allRes.data.pagination.total,
-        active: activeRes.data.pagination.total,
-        inactive: inactiveRes.data.pagination.total,
-      });
+      const res = await adminAPI.getUsers({ role: 'client' });
+      setAllClients(res.data.users);
     } catch (err) {
       console.error('Load clients error:', err);
       setToast({ type: 'error', text: err.message || 'خطأ في تحميل العملاء' });
@@ -89,6 +80,10 @@ export default function AdminClientsPage() {
   };
 
   const handleToggleStatus = async (client) => {
+    if (!client.id) {
+      setToast({ type: 'error', text: 'هذا العميل غير مسجل في النظام المحلي' });
+      return;
+    }
     try {
       await adminAPI.updateUserStatus(client.id, !client.isActive);
       setToast({ type: 'success', text: client.isActive ? 'تم تعطيل الحساب' : 'تم تفعيل الحساب' });
@@ -99,6 +94,11 @@ export default function AdminClientsPage() {
   };
 
   const handleDelete = async () => {
+    if (!deleteTarget.id) {
+      setToast({ type: 'error', text: 'هذا العميل غير مسجل في النظام المحلي' });
+      setDeleteTarget(null);
+      return;
+    }
     setDeleting(true);
     try {
       await adminAPI.deleteUser(deleteTarget.id);
@@ -114,16 +114,19 @@ export default function AdminClientsPage() {
 
   const handleEdit = (client) => {
     setEditForm({
-      name: client.name,
-      phone: client.phone,
+      name: client.name || '',
+      phone: client.phone || '',
       company: client.company || '',
       sondosApiKey: client.sondosApiKey || '',
-      isActive: client.isActive,
     });
     setEditClient(client);
   };
 
   const handleSaveEdit = async () => {
+    if (!editClient.id) {
+      setToast({ type: 'error', text: 'هذا العميل غير مسجل في النظام المحلي' });
+      return;
+    }
     setSaving(true);
     try {
       await adminAPI.updateUser(editClient.id, editForm);
@@ -144,15 +147,19 @@ export default function AdminClientsPage() {
     }
     setTransferring(true);
     try {
-      const res = await adminAPI.transferBalance({
+      const payload = {
         email: transferTarget.email,
         amount: parseFloat(transferAmount),
         operation: transferOperation,
-        transfer_type: 'balance',
-      });
+        transfer_type: transferType,
+      };
+      if (transferTarget.autoCallsId) payload.user_id = transferTarget.autoCallsId;
+      
+      const res = await adminAPI.transferBalance(payload);
       setToast({ type: 'success', text: res.message || 'تم التحويل بنجاح' });
       setTransferTarget(null);
       setTransferAmount('');
+      loadClients(); // Refresh to show updated balances
     } catch (err) {
       setToast({ type: 'error', text: err.message || 'فشل التحويل' });
     } finally {
@@ -164,6 +171,12 @@ export default function AdminClientsPage() {
     navigator.clipboard.writeText(text);
     setCopiedField(field);
     setTimeout(() => setCopiedField(null), 2000);
+  };
+
+  const stats = {
+    total: allClients.length,
+    active: allClients.filter(c => c.isActive).length,
+    inactive: allClients.filter(c => !c.isActive).length,
   };
 
   return (
@@ -184,11 +197,9 @@ export default function AdminClientsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className={`text-3xl font-bold mb-2 ${isDark ? 'text-white' : 'text-gray-900'}`}>إدارة العملاء</h1>
-          <p className={isDark ? 'text-gray-400' : 'text-gray-500'}>عرض وإدارة جميع عملاء المنصة</p>
+          <p className={isDark ? 'text-gray-400' : 'text-gray-500'}>عرض وإدارة جميع عملاء المنصة (من AutoCalls)</p>
         </div>
-        <button onClick={loadClients} className={`p-3 rounded-xl border transition-colors ${
-          isDark ? 'bg-[#111113] border-[#1f1f23] hover:bg-[#1a1a1d]' : 'bg-white border-gray-200 hover:bg-gray-50'
-        }`}>
+        <button onClick={loadClients} className={`p-3 rounded-xl border transition-colors ${isDark ? 'bg-[#111113] border-[#1f1f23] hover:bg-[#1a1a1d]' : 'bg-white border-gray-200 hover:bg-gray-50'}`}>
           <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''} ${isDark ? 'text-gray-400' : 'text-gray-500'}`} />
         </button>
       </div>
@@ -205,15 +216,9 @@ export default function AdminClientsPage() {
         <div className="flex items-center gap-3">
           <div className="relative">
             <Search className={`absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 ${isDark ? 'text-gray-500' : 'text-gray-400'}`} />
-            <input
-              type="text"
-              placeholder="بحث بالاسم، البريد، الشركة..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className={`w-80 pl-4 pr-11 py-2.5 rounded-xl border focus:outline-none focus:ring-2 focus:ring-purple-500/50 ${
-                isDark ? 'bg-[#111113] border-[#1f1f23] text-white placeholder-gray-500' : 'bg-white border-gray-200 text-gray-900 placeholder-gray-400'
-              }`}
-            />
+            <input type="text" placeholder="بحث بالاسم، البريد، الشركة..."
+              value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
+              className={`w-80 pl-4 pr-11 py-2.5 rounded-xl border focus:outline-none focus:ring-2 focus:ring-purple-500/50 ${isDark ? 'bg-[#111113] border-[#1f1f23] text-white placeholder-gray-500' : 'bg-white border-gray-200 text-gray-900 placeholder-gray-400'}`} />
           </div>
           <div className={`flex items-center gap-1 p-1 rounded-xl border ${isDark ? 'bg-[#111113] border-[#1f1f23]' : 'bg-white border-gray-200'}`}>
             {[
@@ -221,7 +226,7 @@ export default function AdminClientsPage() {
               { id: 'active', label: 'نشط' },
               { id: 'inactive', label: 'غير نشط' },
             ].map((f) => (
-              <button key={f.id} onClick={() => { setFilterStatus(f.id); setPagination(prev => ({ ...prev, page: 1 })); }}
+              <button key={f.id} onClick={() => setFilterStatus(f.id)}
                 className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
                   filterStatus === f.id ? 'bg-purple-500/20 text-purple-500' : isDark ? 'text-gray-400 hover:text-white' : 'text-gray-500 hover:text-gray-900'
                 }`}>
@@ -230,9 +235,7 @@ export default function AdminClientsPage() {
             ))}
           </div>
         </div>
-        <p className={isDark ? 'text-gray-400' : 'text-gray-500'}>
-          {pagination.total} عميل
-        </p>
+        <p className={isDark ? 'text-gray-400' : 'text-gray-500'}>{clients.length} عميل</p>
       </div>
 
       {/* Table */}
@@ -248,19 +251,24 @@ export default function AdminClientsPage() {
                 <tr className={`border-b ${isDark ? 'border-[#1f1f23]' : 'border-gray-200'}`}>
                   <th className={`text-right px-6 py-4 text-sm font-medium ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>العميل</th>
                   <th className={`text-right px-6 py-4 text-sm font-medium ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>الهاتف</th>
-                  <th className={`text-right px-6 py-4 text-sm font-medium ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>API</th>
+                  <th className={`text-right px-6 py-4 text-sm font-medium ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                    <div className="flex items-center gap-1"><Timer className="w-4 h-4" /> الدقائق</div>
+                  </th>
+                  <th className={`text-right px-6 py-4 text-sm font-medium ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                    <div className="flex items-center gap-1"><Coins className="w-4 h-4" /> الرصيد</div>
+                  </th>
                   <th className={`text-right px-6 py-4 text-sm font-medium ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>تاريخ التسجيل</th>
                   <th className={`text-right px-6 py-4 text-sm font-medium ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>الحالة</th>
                   <th className={`text-right px-6 py-4 text-sm font-medium ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>الإجراءات</th>
                 </tr>
               </thead>
               <tbody>
-                {clients.map((client) => (
-                  <tr key={client.id} className={`border-b transition-colors ${isDark ? 'border-[#1f1f23]/50 hover:bg-[#1a1a1d]' : 'border-gray-100 hover:bg-gray-50'}`}>
+                {clients.map((client, idx) => (
+                  <tr key={client.id || client.autoCallsId || idx} className={`border-b transition-colors ${isDark ? 'border-[#1f1f23]/50 hover:bg-[#1a1a1d]' : 'border-gray-100 hover:bg-gray-50'}`}>
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 bg-gradient-to-br from-purple-500/20 to-pink-500/20 rounded-full flex items-center justify-center">
-                          <span className="text-purple-500 font-bold text-sm">{client.name.charAt(0)}</span>
+                          <span className="text-purple-500 font-bold text-sm">{client.name?.charAt(0) || '?'}</span>
                         </div>
                         <div>
                           <p className={`font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>{client.name}</p>
@@ -269,71 +277,74 @@ export default function AdminClientsPage() {
                       </div>
                     </td>
                     <td className={`px-6 py-4 font-mono text-sm ${isDark ? 'text-gray-300' : 'text-gray-600'}`} dir="ltr">
-                      {client.phone}
+                      {client.phone || '—'}
                     </td>
                     <td className="px-6 py-4">
-                      <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${
-                        client.sondosApiKey
-                          ? 'bg-teal-500/10 text-teal-500'
-                          : isDark ? 'bg-gray-500/10 text-gray-500' : 'bg-gray-100 text-gray-400'
+                      <span className={`font-mono text-sm font-medium ${
+                        client.minutes_balance > 0
+                          ? isDark ? 'text-teal-400' : 'text-teal-600'
+                          : isDark ? 'text-gray-500' : 'text-gray-400'
                       }`}>
-                        {client.sondosApiKey ? 'متصل' : 'غير متصل'}
+                        {client.minutes_balance != null ? client.minutes_balance.toFixed(1) : '—'}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className={`font-mono text-sm font-medium ${
+                        client.credits_balance > 0
+                          ? isDark ? 'text-cyan-400' : 'text-cyan-600'
+                          : isDark ? 'text-gray-500' : 'text-gray-400'
+                      }`}>
+                        {client.credits_balance != null ? client.credits_balance.toFixed(1) : '—'}
                       </span>
                     </td>
                     <td className={`px-6 py-4 text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
-                      {new Date(client.createdAt).toLocaleDateString('ar-SA')}
+                      {client.createdAt ? new Date(client.createdAt).toLocaleDateString('ar-SA') : '—'}
                     </td>
                     <td className="px-6 py-4">
-                      <button onClick={() => handleToggleStatus(client)}
-                        className={`flex items-center gap-1.5 text-sm cursor-pointer hover:opacity-80 transition-opacity ${client.isActive ? 'text-emerald-500' : 'text-red-500'}`}>
-                        <span className={`w-2 h-2 rounded-full ${client.isActive ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'}`} />
-                        {client.isActive ? 'نشط' : 'معطل'}
-                      </button>
+                      {client.id ? (
+                        <button onClick={() => handleToggleStatus(client)}
+                          className={`flex items-center gap-1.5 text-sm cursor-pointer hover:opacity-80 transition-opacity ${client.isActive ? 'text-emerald-500' : 'text-red-500'}`}>
+                          <span className={`w-2 h-2 rounded-full ${client.isActive ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'}`} />
+                          {client.isActive ? 'نشط' : 'معطل'}
+                        </button>
+                      ) : (
+                        <span className={`flex items-center gap-1.5 text-sm ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
+                          <span className="w-2 h-2 rounded-full bg-gray-400" />
+                          AutoCalls فقط
+                        </span>
+                      )}
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-1.5">
                         <button onClick={() => setViewClient(client)} className={`p-2 rounded-lg transition-colors ${isDark ? 'hover:bg-[#222225]' : 'hover:bg-gray-100'}`} title="عرض">
                           <Eye className={`w-4 h-4 ${isDark ? 'text-gray-400' : 'text-gray-500'}`} />
                         </button>
-                        <button onClick={() => handleEdit(client)} className={`p-2 rounded-lg transition-colors ${isDark ? 'hover:bg-[#222225]' : 'hover:bg-gray-100'}`} title="تعديل">
-                          <Edit className={`w-4 h-4 ${isDark ? 'text-gray-400' : 'text-gray-500'}`} />
-                        </button>
-                        <button onClick={() => { setTransferTarget(client); setTransferAmount(''); setTransferOperation('add'); }} className={`p-2 rounded-lg transition-colors ${isDark ? 'hover:bg-purple-500/10' : 'hover:bg-purple-50'}`} title="تحويل رصيد">
+                        {client.id && (
+                          <button onClick={() => handleEdit(client)} className={`p-2 rounded-lg transition-colors ${isDark ? 'hover:bg-[#222225]' : 'hover:bg-gray-100'}`} title="تعديل">
+                            <Edit className={`w-4 h-4 ${isDark ? 'text-gray-400' : 'text-gray-500'}`} />
+                          </button>
+                        )}
+                        <button onClick={() => { setTransferTarget(client); setTransferAmount(''); setTransferOperation('add'); setTransferType('balance'); }}
+                          className={`p-2 rounded-lg transition-colors ${isDark ? 'hover:bg-purple-500/10' : 'hover:bg-purple-50'}`} title="تحويل رصيد">
                           <DollarSign className="w-4 h-4 text-purple-500" />
                         </button>
-                        <button onClick={() => setDeleteTarget(client)} className={`p-2 rounded-lg transition-colors ${isDark ? 'hover:bg-red-500/20' : 'hover:bg-red-50'}`} title="حذف">
-                          <Trash2 className="w-4 h-4 text-red-500" />
-                        </button>
+                        {client.id && (
+                          <button onClick={() => setDeleteTarget(client)} className={`p-2 rounded-lg transition-colors ${isDark ? 'hover:bg-red-500/20' : 'hover:bg-red-50'}`} title="حذف">
+                            <Trash2 className="w-4 h-4 text-red-500" />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
                 ))}
                 {clients.length === 0 && !loading && (
-                  <tr>
-                    <td colSpan={6} className="px-6 py-16 text-center">
-                      <Users className={`w-12 h-12 mx-auto mb-3 ${isDark ? 'text-gray-600' : 'text-gray-300'}`} />
-                      <p className={`text-sm ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>لا يوجد عملاء</p>
-                    </td>
-                  </tr>
+                  <tr><td colSpan={7} className="px-6 py-16 text-center">
+                    <Users className={`w-12 h-12 mx-auto mb-3 ${isDark ? 'text-gray-600' : 'text-gray-300'}`} />
+                    <p className={`text-sm ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>لا يوجد عملاء</p>
+                  </td></tr>
                 )}
               </tbody>
             </table>
-          </div>
-        )}
-
-        {/* Pagination */}
-        {pagination.pages > 1 && (
-          <div className={`flex items-center justify-center gap-2 px-6 py-4 border-t ${isDark ? 'border-[#1f1f23]' : 'border-gray-200'}`}>
-            {Array.from({ length: pagination.pages }, (_, i) => i + 1).map(page => (
-              <button key={page} onClick={() => setPagination(prev => ({ ...prev, page }))}
-                className={`w-9 h-9 rounded-lg text-sm font-medium transition-colors ${
-                  page === pagination.page
-                    ? 'bg-purple-500 text-white'
-                    : isDark ? 'text-gray-400 hover:bg-[#1a1a1d]' : 'text-gray-500 hover:bg-gray-100'
-                }`}>
-                {page}
-              </button>
-            ))}
           </div>
         )}
       </div>
@@ -344,20 +355,46 @@ export default function AdminClientsPage() {
           <div className={`w-full max-w-lg rounded-2xl border p-6 shadow-2xl max-h-[90vh] overflow-y-auto ${isDark ? 'bg-[#111113] border-[#1f1f23]' : 'bg-white border-gray-200'}`} onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-6">
               <h3 className={`text-lg font-bold ${isDark ? 'text-white' : 'text-gray-900'}`}>بيانات العميل</h3>
-              <button onClick={() => setViewClient(null)} className={`p-1 rounded-lg ${isDark ? 'hover:bg-[#1a1a1d] text-gray-400' : 'hover:bg-gray-100 text-gray-500'}`}>
-                <X className="w-5 h-5" />
-              </button>
+              <button onClick={() => setViewClient(null)} className={`p-1 rounded-lg ${isDark ? 'hover:bg-[#1a1a1d] text-gray-400' : 'hover:bg-gray-100 text-gray-500'}`}><X className="w-5 h-5" /></button>
             </div>
-            <div className="space-y-4">
+            <div className="space-y-3">
               <InfoRow label="الاسم" value={viewClient.name} isDark={isDark} />
               <InfoRow label="البريد" value={viewClient.email} isDark={isDark} dir="ltr" copyable onCopy={() => handleCopy(viewClient.email, 'email')} copied={copiedField === 'email'} />
-              <InfoRow label="الهاتف" value={viewClient.phone} isDark={isDark} dir="ltr" copyable onCopy={() => handleCopy(viewClient.phone, 'phone')} copied={copiedField === 'phone'} />
+              <InfoRow label="الهاتف" value={viewClient.phone || '—'} isDark={isDark} dir="ltr" copyable={!!viewClient.phone} onCopy={() => handleCopy(viewClient.phone, 'phone')} copied={copiedField === 'phone'} />
               <InfoRow label="الشركة" value={viewClient.company || '—'} isDark={isDark} />
-              <InfoRow label="كلمة المرور" value={viewClient.plainPassword || '—'} isDark={isDark} dir="ltr" copyable onCopy={() => handleCopy(viewClient.plainPassword, 'password')} copied={copiedField === 'password'} />
-              <InfoRow label="مفتاح API" value={viewClient.sondosApiKey || '—'} isDark={isDark} dir="ltr" copyable={!!viewClient.sondosApiKey} onCopy={() => handleCopy(viewClient.sondosApiKey, 'apikey')} copied={copiedField === 'apikey'} />
-              <InfoRow label="الحالة" value={viewClient.isActive ? 'نشط ✅' : 'معطل ❌'} isDark={isDark} />
-              <InfoRow label="تاريخ التسجيل" value={new Date(viewClient.createdAt).toLocaleDateString('ar-SA')} isDark={isDark} />
-              <InfoRow label="آخر تسجيل دخول" value={viewClient.lastLogin ? new Date(viewClient.lastLogin).toLocaleString('ar-SA') : 'لم يسجل دخول بعد'} isDark={isDark} />
+              {viewClient.plainPassword && (
+                <InfoRow label="كلمة المرور" value={viewClient.plainPassword} isDark={isDark} dir="ltr" copyable onCopy={() => handleCopy(viewClient.plainPassword, 'password')} copied={copiedField === 'password'} />
+              )}
+              {viewClient.sondosApiKey && (
+                <InfoRow label="مفتاح API" value={viewClient.sondosApiKey} isDark={isDark} dir="ltr" copyable onCopy={() => handleCopy(viewClient.sondosApiKey, 'apikey')} copied={copiedField === 'apikey'} />
+              )}
+              <div className={`p-3 rounded-xl ${isDark ? 'bg-[#0a0a0b]' : 'bg-gray-50'}`}>
+                <p className={`text-xs font-medium mb-2 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>أرصدة AutoCalls</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className={`p-3 rounded-lg ${isDark ? 'bg-[#111113]' : 'bg-white'}`}>
+                    <div className="flex items-center gap-2 mb-1">
+                      <Timer className="w-4 h-4 text-teal-500" />
+                      <span className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>الدقائق</span>
+                    </div>
+                    <p className={`text-lg font-bold ${isDark ? 'text-teal-400' : 'text-teal-600'}`}>
+                      {viewClient.minutes_balance != null ? viewClient.minutes_balance.toFixed(1) : '—'}
+                    </p>
+                  </div>
+                  <div className={`p-3 rounded-lg ${isDark ? 'bg-[#111113]' : 'bg-white'}`}>
+                    <div className="flex items-center gap-2 mb-1">
+                      <Coins className="w-4 h-4 text-cyan-500" />
+                      <span className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>الرصيد</span>
+                    </div>
+                    <p className={`text-lg font-bold ${isDark ? 'text-cyan-400' : 'text-cyan-600'}`}>
+                      {viewClient.credits_balance != null ? viewClient.credits_balance.toFixed(1) : '—'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+              {viewClient.autoCallsId && (
+                <InfoRow label="AutoCalls ID" value={String(viewClient.autoCallsId)} isDark={isDark} dir="ltr" />
+              )}
+              <InfoRow label="تاريخ التسجيل" value={viewClient.createdAt ? new Date(viewClient.createdAt).toLocaleDateString('ar-SA') : '—'} isDark={isDark} />
             </div>
           </div>
         </div>
@@ -369,9 +406,7 @@ export default function AdminClientsPage() {
           <div className={`w-full max-w-md rounded-2xl border p-6 shadow-2xl ${isDark ? 'bg-[#111113] border-[#1f1f23]' : 'bg-white border-gray-200'}`} onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-6">
               <h3 className={`text-lg font-bold ${isDark ? 'text-white' : 'text-gray-900'}`}>تعديل العميل</h3>
-              <button onClick={() => setEditClient(null)} className={`p-1 rounded-lg ${isDark ? 'hover:bg-[#1a1a1d] text-gray-400' : 'hover:bg-gray-100 text-gray-500'}`}>
-                <X className="w-5 h-5" />
-              </button>
+              <button onClick={() => setEditClient(null)} className={`p-1 rounded-lg ${isDark ? 'hover:bg-[#1a1a1d] text-gray-400' : 'hover:bg-gray-100 text-gray-500'}`}><X className="w-5 h-5" /></button>
             </div>
             <div className="space-y-4">
               <FormField label="الاسم" value={editForm.name} onChange={(v) => setEditForm(prev => ({ ...prev, name: v }))} isDark={isDark} />
@@ -404,33 +439,58 @@ export default function AdminClientsPage() {
                   <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>{transferTarget.name}</p>
                 </div>
               </div>
-              <button onClick={() => setTransferTarget(null)} className={`p-1 rounded-lg ${isDark ? 'hover:bg-[#1a1a1d] text-gray-400' : 'hover:bg-gray-100 text-gray-500'}`}>
-                <X className="w-5 h-5" />
-              </button>
+              <button onClick={() => setTransferTarget(null)} className={`p-1 rounded-lg ${isDark ? 'hover:bg-[#1a1a1d] text-gray-400' : 'hover:bg-gray-100 text-gray-500'}`}><X className="w-5 h-5" /></button>
             </div>
             <div className="space-y-4">
+              {/* Current balances */}
+              <div className={`grid grid-cols-2 gap-3 p-3 rounded-xl ${isDark ? 'bg-[#0a0a0b]' : 'bg-gray-50'}`}>
+                <div className="text-center">
+                  <p className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>الدقائق الحالية</p>
+                  <p className={`text-lg font-bold ${isDark ? 'text-teal-400' : 'text-teal-600'}`}>
+                    {transferTarget.minutes_balance?.toFixed(1) ?? '—'}
+                  </p>
+                </div>
+                <div className="text-center">
+                  <p className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>الرصيد الحالي</p>
+                  <p className={`text-lg font-bold ${isDark ? 'text-cyan-400' : 'text-cyan-600'}`}>
+                    {transferTarget.credits_balance?.toFixed(1) ?? '—'}
+                  </p>
+                </div>
+              </div>
+
               <div className={`p-3 rounded-xl ${isDark ? 'bg-[#0a0a0b]' : 'bg-gray-50'}`}>
                 <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>البريد الإلكتروني</p>
                 <p className={`font-mono text-sm ${isDark ? 'text-white' : 'text-gray-900'}`} dir="ltr">{transferTarget.email}</p>
               </div>
               <div>
-                <label className={`block text-sm font-medium mb-2 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>المبلغ ($)</label>
+                <label className={`block text-sm font-medium mb-2 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>المبلغ</label>
                 <input type="number" value={transferAmount} onChange={(e) => setTransferAmount(e.target.value)}
-                  placeholder="0.00" min="0" step="0.01" autoFocus
+                  placeholder="0.00" min="0" step="0.01" autoFocus dir="ltr"
                   className={`w-full px-4 py-3 rounded-xl border focus:outline-none focus:ring-2 focus:ring-purple-500/50 ${isDark ? 'bg-[#0a0a0b] border-[#1f1f23] text-white placeholder-gray-500' : 'bg-gray-50 border-gray-200 text-gray-900 placeholder-gray-400'}`}
-                  dir="ltr" onKeyDown={(e) => e.key === 'Enter' && handleTransfer()} />
+                  onKeyDown={(e) => e.key === 'Enter' && handleTransfer()} />
               </div>
-              <div>
-                <label className={`block text-sm font-medium mb-2 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>العملية</label>
-                <select value={transferOperation} onChange={(e) => setTransferOperation(e.target.value)}
-                  className={`w-full px-4 py-3 rounded-xl border focus:outline-none focus:ring-2 focus:ring-purple-500/50 ${isDark ? 'bg-[#0a0a0b] border-[#1f1f23] text-white' : 'bg-gray-50 border-gray-200 text-gray-900'}`}>
-                  <option value="add">إضافة رصيد</option>
-                  <option value="subtract">خصم رصيد</option>
-                </select>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className={`block text-sm font-medium mb-2 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>العملية</label>
+                  <select value={transferOperation} onChange={(e) => setTransferOperation(e.target.value)}
+                    className={`w-full px-4 py-3 rounded-xl border focus:outline-none focus:ring-2 focus:ring-purple-500/50 ${isDark ? 'bg-[#0a0a0b] border-[#1f1f23] text-white' : 'bg-gray-50 border-gray-200 text-gray-900'}`}>
+                    <option value="add">إضافة</option>
+                    <option value="subtract">خصم</option>
+                  </select>
+                </div>
+                <div>
+                  <label className={`block text-sm font-medium mb-2 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>النوع</label>
+                  <select value={transferType} onChange={(e) => setTransferType(e.target.value)}
+                    className={`w-full px-4 py-3 rounded-xl border focus:outline-none focus:ring-2 focus:ring-purple-500/50 ${isDark ? 'bg-[#0a0a0b] border-[#1f1f23] text-white' : 'bg-gray-50 border-gray-200 text-gray-900'}`}>
+                    <option value="balance">رصيد (Credits)</option>
+                    <option value="minutes">دقائق</option>
+                  </select>
+                </div>
               </div>
               <div className="flex items-center gap-3 pt-2">
                 <button onClick={() => setTransferTarget(null)} className={`flex-1 py-3 rounded-xl font-medium border transition-colors ${isDark ? 'bg-[#1a1a1d] border-[#1f1f23] text-white hover:bg-[#222225]' : 'bg-gray-100 border-gray-200 text-gray-700 hover:bg-gray-200'}`}>إلغاء</button>
-                <button onClick={handleTransfer} disabled={transferring} className="flex-1 py-3 bg-gradient-to-l from-purple-500 to-pink-500 hover:from-purple-400 hover:to-pink-400 text-white font-bold rounded-xl transition-all flex items-center justify-center gap-2 disabled:opacity-70">
+                <button onClick={handleTransfer} disabled={transferring}
+                  className="flex-1 py-3 bg-gradient-to-l from-purple-500 to-pink-500 hover:from-purple-400 hover:to-pink-400 text-white font-bold rounded-xl transition-all flex items-center justify-center gap-2 disabled:opacity-70">
                   {transferring ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
                   {transferring ? 'جاري التحويل...' : 'تأكيد التحويل'}
                 </button>
@@ -448,7 +508,7 @@ export default function AdminClientsPage() {
               <div className="w-14 h-14 mx-auto mb-3 rounded-2xl bg-red-500/10 flex items-center justify-center"><Trash2 className="w-7 h-7 text-red-500" /></div>
               <h3 className={`text-lg font-bold ${isDark ? 'text-white' : 'text-gray-900'}`}>حذف العميل</h3>
               <p className={`text-sm mt-2 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
-                هل أنت متأكد من حذف <strong>{deleteTarget.name}</strong>؟ لا يمكن التراجع عن هذا الإجراء.
+                هل أنت متأكد من حذف <strong>{deleteTarget.name}</strong>؟ سيتم حذفه من النظام المحلي فقط.
               </p>
             </div>
             <div className="flex items-center gap-3 mt-6">
@@ -468,17 +528,11 @@ export default function AdminClientsPage() {
 // ── Helper Components ──
 
 function StatCard({ icon: Icon, label, value, color, isDark }) {
-  const colorClasses = {
-    purple: 'bg-purple-500/10 text-purple-500',
-    emerald: 'bg-emerald-500/10 text-emerald-500',
-    red: 'bg-red-500/10 text-red-500',
-  };
+  const colorClasses = { purple: 'bg-purple-500/10 text-purple-500', emerald: 'bg-emerald-500/10 text-emerald-500', red: 'bg-red-500/10 text-red-500' };
   return (
     <div className={`rounded-xl p-4 border ${isDark ? 'bg-[#111113] border-[#1f1f23]' : 'bg-white border-gray-200'}`}>
       <div className="flex items-center gap-3">
-        <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${colorClasses[color]}`}>
-          <Icon className="w-5 h-5" />
-        </div>
+        <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${colorClasses[color]}`}><Icon className="w-5 h-5" /></div>
         <div>
           <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>{label}</p>
           <p className={`text-xl font-bold ${isDark ? 'text-white' : 'text-gray-900'}`}>{value}</p>

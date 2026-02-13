@@ -1,116 +1,232 @@
 // =====================================================
-// Admin Controller — Dashboard + Users + Balance Transfer
+// Admin Controller — Dashboard + Users (AutoCalls) + Balance Transfer
 // =====================================================
 const User = require('../models/User');
 
 const AUTOCALLS_API_BASE = 'https://app.autocalls.ai/api';
 
+// Helper: Call AutoCalls White-Label API
+async function autoCallsRequest(endpoint, options = {}) {
+  const apiKey = process.env.AUTOCALLS_API_KEY;
+  if (!apiKey) throw new Error('AUTOCALLS_API_KEY غير مُعد');
+
+  const res = await fetch(`${AUTOCALLS_API_BASE}${endpoint}`, {
+    ...options,
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      ...options.headers,
+    },
+  });
+
+  const data = await res.json();
+  if (!res.ok) {
+    const msg = data.message || data.error || `AutoCalls error: ${res.status}`;
+    const err = new Error(msg);
+    err.status = res.status;
+    err.details = data;
+    throw err;
+  }
+  return data;
+}
+
 // ══════════════════════════════════════════════════════
-// GET /api/admin/dashboard — Real-time stats
+// GET /api/admin/dashboard — Stats from AutoCalls + Local DB
 // ══════════════════════════════════════════════════════
 exports.getDashboard = async (req, res) => {
   try {
-    const totalClients = await User.countDocuments({ role: 'client' });
-    const activeClients = await User.countDocuments({ role: 'client', isActive: true });
-    const inactiveClients = await User.countDocuments({ role: 'client', isActive: false });
+    // Fetch users from AutoCalls
+    let autoCallsUsers = [];
+    try {
+      const acRes = await autoCallsRequest('/white-label/users');
+      autoCallsUsers = acRes.data || [];
+    } catch (err) {
+      console.error('[Dashboard] AutoCalls fetch failed:', err.message);
+    }
 
-    // Clients with API key connected
-    const connectedClients = await User.countDocuments({
-      role: 'client',
-      $or: [
-        { sondosApiKey: { $exists: true, $ne: '' } },
-        { api_key: { $exists: true, $ne: '' } }
-      ]
-    });
+    // Local DB stats
+    const totalLocal = await User.countDocuments({ role: 'client' });
+    const activeLocal = await User.countDocuments({ role: 'client', isActive: true });
+    const inactiveLocal = await User.countDocuments({ role: 'client', isActive: false });
 
-    // Recent clients (last 10)
-    const recentClients = await User.find({ role: 'client' })
-      .sort({ createdAt: -1 })
-      .limit(10)
-      .select('name email company isActive createdAt lastLogin sondosApiKey api_key');
-
-    // Clients registered per month (last 6 months)
+    // Monthly registrations (last 6 months)
     const sixMonthsAgo = new Date();
     sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
-
     const monthlyRegistrations = await User.aggregate([
       { $match: { role: 'client', createdAt: { $gte: sixMonthsAgo } } },
-      {
-        $group: {
-          _id: { $dateToString: { format: '%Y-%m', date: '$createdAt' } },
-          count: { $sum: 1 }
-        }
-      },
+      { $group: { _id: { $dateToString: { format: '%Y-%m', date: '$createdAt' } }, count: { $sum: 1 } } },
       { $sort: { _id: 1 } }
     ]);
+
+    // Merge AutoCalls data with local users for recent list
+    const localUsers = await User.find({ role: 'client' })
+      .sort({ createdAt: -1 })
+      .limit(10)
+      .select('name email company phone isActive createdAt lastLogin sondosApiKey api_key');
+
+    const recentClients = localUsers.map(u => {
+      const acUser = autoCallsUsers.find(ac => ac.email?.toLowerCase() === u.email?.toLowerCase());
+      return {
+        id: u._id,
+        name: u.name,
+        email: u.email,
+        company: u.company || '',
+        phone: u.phone || '',
+        isActive: u.isActive,
+        hasApiKey: !!(u.sondosApiKey || u.api_key),
+        createdAt: u.createdAt,
+        lastLogin: u.lastLogin,
+        // AutoCalls data
+        autoCallsId: acUser?.id || null,
+        minutes_balance: acUser?.minutes_balance ?? null,
+        credits_balance: acUser?.credits_balance ?? null,
+      };
+    });
+
+    // Total balance across all users
+    const totalMinutes = autoCallsUsers.reduce((sum, u) => sum + (u.minutes_balance || 0), 0);
+    const totalCredits = autoCallsUsers.reduce((sum, u) => sum + (u.credits_balance || 0), 0);
 
     res.json({
       success: true,
       data: {
         stats: {
-          totalClients,
-          activeClients,
-          inactiveClients,
-          connectedClients,
+          totalClients: autoCallsUsers.length || totalLocal,
+          activeClients: activeLocal,
+          inactiveClients: inactiveLocal,
+          totalMinutes: Math.round(totalMinutes * 100) / 100,
+          totalCredits: Math.round(totalCredits * 100) / 100,
         },
-        recentClients: recentClients.map(u => ({
-          id: u._id,
-          name: u.name,
-          email: u.email,
-          company: u.company || '',
-          isActive: u.isActive,
-          hasApiKey: !!(u.sondosApiKey || u.api_key),
-          createdAt: u.createdAt,
-          lastLogin: u.lastLogin,
-        })),
+        recentClients,
         monthlyRegistrations,
       }
     });
   } catch (error) {
-    console.error('[Admin Dashboard]', error.message);
+    console.error('[Dashboard]', error.message);
     res.status(500).json({ success: false, message: 'حدث خطأ في تحميل البيانات' });
   }
 };
 
 // ══════════════════════════════════════════════════════
-// POST /api/admin/transfer-balance — Transfer via AutoCalls White-Label API
-// https://docs.autocalls.ai/api-reference/white-label/transfer-balance
+// GET /api/admin/users — Fetch from AutoCalls + merge local DB
+// ══════════════════════════════════════════════════════
+exports.getUsers = async (req, res) => {
+  try {
+    const { search, status } = req.query;
+
+    // 1. Fetch all users from AutoCalls White-Label API
+    let autoCallsUsers = [];
+    try {
+      const acRes = await autoCallsRequest('/white-label/users');
+      autoCallsUsers = acRes.data || [];
+    } catch (err) {
+      console.error('[GetUsers] AutoCalls fetch failed:', err.message);
+      // Fallback to local DB only
+    }
+
+    // 2. Fetch all local client users
+    const localUsers = await User.find({ role: 'client' })
+      .select('+plainPassword')
+      .sort({ createdAt: -1 });
+
+    // 3. Merge: AutoCalls users are the primary source, enriched with local data
+    const localByEmail = {};
+    localUsers.forEach(u => {
+      localByEmail[u.email.toLowerCase()] = u;
+    });
+
+    let mergedUsers = autoCallsUsers.map(acUser => {
+      const local = localByEmail[acUser.email?.toLowerCase()];
+      return {
+        id: local?._id?.toString() || null,
+        autoCallsId: acUser.id,
+        name: acUser.name || local?.name || '',
+        email: acUser.email,
+        phone: local?.phone || '',
+        company: local?.company || '',
+        isActive: local?.isActive ?? true,
+        sondosApiKey: local?.sondosApiKey || local?.api_key || '',
+        plainPassword: local?.plainPassword || '',
+        minutes_balance: acUser.minutes_balance ?? 0,
+        credits_balance: acUser.credits_balance ?? 0,
+        createdAt: acUser.created_at || local?.createdAt || null,
+        lastLogin: local?.lastLogin || null,
+        // Flag if user exists in local DB
+        hasLocalAccount: !!local,
+      };
+    });
+
+    // Also add local users not in AutoCalls (edge case)
+    const acEmails = new Set(autoCallsUsers.map(u => u.email?.toLowerCase()));
+    localUsers.forEach(u => {
+      if (!acEmails.has(u.email.toLowerCase())) {
+        mergedUsers.push({
+          id: u._id.toString(),
+          autoCallsId: null,
+          name: u.name,
+          email: u.email,
+          phone: u.phone || '',
+          company: u.company || '',
+          isActive: u.isActive,
+          sondosApiKey: u.sondosApiKey || u.api_key || '',
+          plainPassword: u.plainPassword || '',
+          minutes_balance: null,
+          credits_balance: null,
+          createdAt: u.createdAt,
+          lastLogin: u.lastLogin,
+          hasLocalAccount: true,
+        });
+      }
+    });
+
+    // 4. Apply filters
+    if (search) {
+      const q = search.toLowerCase();
+      mergedUsers = mergedUsers.filter(u =>
+        u.name?.toLowerCase().includes(q) ||
+        u.email?.toLowerCase().includes(q) ||
+        u.phone?.includes(q) ||
+        u.company?.toLowerCase().includes(q)
+      );
+    }
+
+    if (status === 'active') mergedUsers = mergedUsers.filter(u => u.isActive);
+    if (status === 'inactive') mergedUsers = mergedUsers.filter(u => !u.isActive);
+
+    res.json({
+      success: true,
+      data: {
+        users: mergedUsers,
+        pagination: {
+          total: mergedUsers.length,
+          page: 1,
+          pages: 1,
+        }
+      }
+    });
+  } catch (error) {
+    console.error('[GetUsers]', error.message);
+    res.status(500).json({ success: false, message: 'حدث خطأ في الخادم' });
+  }
+};
+
+// ══════════════════════════════════════════════════════
+// POST /api/admin/transfer-balance — AutoCalls White-Label API
 // ══════════════════════════════════════════════════════
 exports.transferBalance = async (req, res) => {
   try {
     const { user_id, email, transfer_type, operation, amount } = req.body;
 
-    // Validate required fields
     if (!email || !amount) {
-      return res.status(400).json({
-        success: false,
-        message: 'البريد الإلكتروني والمبلغ مطلوبان'
-      });
+      return res.status(400).json({ success: false, message: 'البريد الإلكتروني والمبلغ مطلوبان' });
     }
-
     if (amount <= 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'المبلغ يجب أن يكون أكبر من صفر'
-      });
+      return res.status(400).json({ success: false, message: 'المبلغ يجب أن يكون أكبر من صفر' });
     }
 
-    const apiKey = process.env.AUTOCALLS_API_KEY;
-    if (!apiKey) {
-      return res.status(500).json({
-        success: false,
-        message: 'مفتاح AutoCalls API غير مُعد في الخادم'
-      });
-    }
-
-    // Call AutoCalls White-Label Transfer API
-    const response = await fetch(`${AUTOCALLS_API_BASE}/white-label/transfer`, {
+    const data = await autoCallsRequest('/white-label/transfer', {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-      },
       body: JSON.stringify({
         user_id: user_id || undefined,
         email,
@@ -120,17 +236,6 @@ exports.transferBalance = async (req, res) => {
       }),
     });
 
-    const data = await response.json();
-
-    if (!response.ok) {
-      console.error('[Transfer Balance] AutoCalls error:', response.status, data);
-      return res.status(response.status).json({
-        success: false,
-        message: data.message || data.error || `خطأ من AutoCalls: ${response.status}`,
-        details: data,
-      });
-    }
-
     res.json({
       success: true,
       message: `تم تحويل ${amount} بنجاح إلى ${email}`,
@@ -138,61 +243,17 @@ exports.transferBalance = async (req, res) => {
     });
   } catch (error) {
     console.error('[Transfer Balance]', error.message);
-    res.status(502).json({
+    res.status(error.status || 502).json({
       success: false,
-      message: 'فشل الاتصال بخدمة AutoCalls',
+      message: error.message || 'فشل الاتصال بخدمة AutoCalls',
+      details: error.details,
     });
   }
 };
 
 // ══════════════════════════════════════════════════════
-// GET /api/admin/users — List all users with pagination & search
+// GET /api/admin/users/:id — Single user (local DB)
 // ══════════════════════════════════════════════════════
-exports.getUsers = async (req, res) => {
-  try {
-    const { page = 1, limit = 20, search, role, status } = req.query;
-    const query = {};
-
-    if (search) {
-      const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      query.$or = [
-        { name: { $regex: escaped, $options: 'i' } },
-        { email: { $regex: escaped, $options: 'i' } },
-        { phone: { $regex: escaped, $options: 'i' } },
-        { company: { $regex: escaped, $options: 'i' } }
-      ];
-    }
-
-    if (role) query.role = role;
-    if (status === 'active') query.isActive = true;
-    if (status === 'inactive') query.isActive = false;
-
-    const users = await User.find(query)
-      .select('+plainPassword')
-      .sort({ createdAt: -1 })
-      .skip((page - 1) * limit)
-      .limit(parseInt(limit));
-
-    const total = await User.countDocuments(query);
-
-    res.json({
-      success: true,
-      data: {
-        users: users.map(u => u.toAdminJSON()),
-        pagination: {
-          page: parseInt(page),
-          limit: parseInt(limit),
-          total,
-          pages: Math.ceil(total / limit)
-        }
-      }
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, message: 'حدث خطأ في الخادم' });
-  }
-};
-
-// GET /api/admin/users/:id
 exports.getUser = async (req, res) => {
   try {
     const user = await User.findById(req.params.id).select('+plainPassword');
@@ -210,7 +271,6 @@ exports.updateUser = async (req, res) => {
   try {
     const { name, phone, company, timezone, role, isActive, sondosApiKey, api_key } = req.body;
     const user = await User.findById(req.params.id);
-
     if (!user) {
       return res.status(404).json({ success: false, message: 'المستخدم غير موجود' });
     }
@@ -236,7 +296,6 @@ exports.updateUserStatus = async (req, res) => {
   try {
     const { isActive } = req.body;
     const user = await User.findById(req.params.id);
-
     if (!user) {
       return res.status(404).json({ success: false, message: 'المستخدم غير موجود' });
     }

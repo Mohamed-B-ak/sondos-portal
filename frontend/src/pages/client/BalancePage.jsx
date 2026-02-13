@@ -16,7 +16,7 @@ import { useTheme } from "@/hooks/useTheme";
 import { useLanguage } from "@/hooks/useLanguage";
 import { userAPI, callsAPI } from "@/services/api/sondosAPI";
 
-export default function BalancePage() {
+export default function BalancePage({ embedded = false }) {
   const { isDark } = useTheme();
   const { t, isAr } = useLanguage();
   
@@ -98,9 +98,11 @@ export default function BalancePage() {
   if (error) {
     return (
       <div className="space-y-8">
-        <div className="flex justify-between items-center">
-          <h1 className={`text-3xl font-bold ${isDark ? 'text-white' : 'text-gray-900'}`}>{t('bal.title')}</h1>
-        </div>
+        {!embedded && (
+          <div className="flex justify-between items-center">
+            <h1 className={`text-3xl font-bold ${isDark ? 'text-white' : 'text-gray-900'}`}>{t('bal.title')}</h1>
+          </div>
+        )}
         
         <div className={`flex flex-col items-center justify-center p-8 rounded-2xl ${
           isDark ? 'bg-red-500/10 border border-red-500/20' : 'bg-red-50 border border-red-200'
@@ -123,38 +125,40 @@ export default function BalancePage() {
 
   return (
     <div className="space-y-8">
-      {/* Header */}
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className={`text-3xl font-bold ${isDark ? 'text-white' : 'text-gray-900'}`}>{t('bal.title')}</h1>
-          <p className={`mt-1 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
-            {t('bal.subtitle')}
-          </p>
+      {/* Header — hidden when embedded in Settings */}
+      {!embedded && (
+        <div className="flex justify-between items-center">
+          <div>
+            <h1 className={`text-3xl font-bold ${isDark ? 'text-white' : 'text-gray-900'}`}>{t('bal.title')}</h1>
+            <p className={`mt-1 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+              {t('bal.subtitle')}
+            </p>
+          </div>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleRefresh}
+              disabled={refreshing}
+              className={`p-3 rounded-xl transition-colors ${
+                isDark 
+                  ? 'bg-[#1a1a1d] hover:bg-[#222225] border border-[#1f1f23]' 
+                  : 'bg-gray-100 hover:bg-gray-200 border border-gray-200'
+              }`}
+            >
+              <RefreshCw className={`w-5 h-5 ${refreshing ? 'animate-spin' : ''} ${isDark ? 'text-gray-400' : 'text-gray-600'}`} />
+            </button>
+            <a
+              href="https://app.sondos-ai.com/billing"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 px-5 py-3 bg-gradient-to-l from-teal-500 to-cyan-500 hover:from-teal-400 hover:to-cyan-400 text-white font-bold rounded-xl transition-all shadow-lg shadow-teal-500/25"
+            >
+              <Plus className="w-5 h-5" />
+              {t('bal.recharge')}
+              <ExternalLink className="w-4 h-4" />
+            </a>
+          </div>
         </div>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={handleRefresh}
-            disabled={refreshing}
-            className={`p-3 rounded-xl transition-colors ${
-              isDark 
-                ? 'bg-[#1a1a1d] hover:bg-[#222225] border border-[#1f1f23]' 
-                : 'bg-gray-100 hover:bg-gray-200 border border-gray-200'
-            }`}
-          >
-            <RefreshCw className={`w-5 h-5 ${refreshing ? 'animate-spin' : ''} ${isDark ? 'text-gray-400' : 'text-gray-600'}`} />
-          </button>
-          <a
-            href="https://app.sondos-ai.com/billing"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-2 px-5 py-3 bg-gradient-to-l from-teal-500 to-cyan-500 hover:from-teal-400 hover:to-cyan-400 text-white font-bold rounded-xl transition-all shadow-lg shadow-teal-500/25"
-          >
-            <Plus className="w-5 h-5" />
-            {t('bal.recharge')}
-            <ExternalLink className="w-4 h-4" />
-          </a>
-        </div>
-      </div>
+      )}
 
       {/* Balance Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">

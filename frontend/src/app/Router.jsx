@@ -74,7 +74,7 @@ export default function Router() {
           <Route path="integrations" element={<IntegrationsPage />} />
           <Route path="settings" element={<SettingsPage />} />
 
-          {/* Redirects for old routes → settings tabs */}
+          {/* Redirects: old routes → settings tabs */}
           <Route path="balance" element={<Navigate to="/settings?tab=balance" replace />} />
           <Route path="api-settings" element={<Navigate to="/settings?tab=api" replace />} />
         </Route>

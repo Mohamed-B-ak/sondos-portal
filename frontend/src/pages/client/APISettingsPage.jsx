@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { 
-  Key, Plus, Trash2, Copy, Check, CheckCircle, AlertCircle, 
-  Loader2, Eye, EyeOff, Shield, RefreshCw, X, Save, Unplug
+  Key, Plus, Copy, Check, CheckCircle, AlertCircle, 
+  Loader2, Eye, EyeOff, Shield, RefreshCw, X, Save
 } from "lucide-react";
 import { useTheme } from "@/hooks/useTheme";
 import { useLanguage } from "@/hooks/useLanguage";
@@ -11,7 +11,9 @@ export default function APISettingsPage({ embedded = false }) {
   const { isDark } = useTheme();
   const { t, isAr } = useLanguage();
   
-  const [isConnected, setIsConnected] = useState(hasApiKey());
+  // ============ Connection State ============
+  // null = not checked yet, true = connected, false = no API key
+  const [isConnected, setIsConnected] = useState(null);
   
   // ============ Manual Input Mode ============
   const [apiKeyInput, setApiKeyInput] = useState("");
@@ -20,22 +22,21 @@ export default function APISettingsPage({ embedded = false }) {
   const [inputStatus, setInputStatus] = useState(null);
   const [inputMessage, setInputMessage] = useState("");
 
-  // ============ Management Mode ============
+  // ============ Keys List ============
   const [keys, setKeys] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [showCreate, setShowCreate] = useState(false);
   const [newKeyName, setNewKeyName] = useState("");
   const [creating, setCreating] = useState(false);
   const [createdKey, setCreatedKey] = useState(null);
   const [copiedKey, setCopiedKey] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState(null);
-  const [deleting, setDeleting] = useState(false);
   const [toast, setToast] = useState(null);
 
+  // ============ Auto-fetch keys on mount ============
   useEffect(() => {
-    if (isConnected) loadKeys();
-  }, [isConnected]);
+    loadKeys();
+  }, []);
 
   useEffect(() => {
     if (toast) {
@@ -44,7 +45,30 @@ export default function APISettingsPage({ embedded = false }) {
     }
   }, [toast]);
 
-  // ============ Manual Input ============
+  // ============ Load Keys from Sondos AI (via backend proxy) ============
+  const loadKeys = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await apiKeysAPI.getAll();
+      const data = res.api_keys || res.data || [];
+      setKeys(Array.isArray(data) ? data : []);
+      setIsConnected(true);
+    } catch (err) {
+      console.error('Load keys error:', err);
+      // If backend says "no API key" (400) → show manual input
+      if (err.message?.includes('مفتاح') || err.message?.includes('API') || !hasApiKey()) {
+        setIsConnected(false);
+      } else {
+        setIsConnected(true);
+        setError(err.message);
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ============ Manual Input — Save & Verify ============
   const handleVerifyAndSave = async () => {
     if (!apiKeyInput.trim()) {
       setInputStatus('error');
@@ -58,7 +82,11 @@ export default function APISettingsPage({ embedded = false }) {
       await assistantsAPI.getAll();
       setInputStatus('success');
       setInputMessage(t('apiSettings.verified'));
-      setTimeout(() => setIsConnected(true), 1000);
+      // After successful verification, load keys
+      setTimeout(() => {
+        setIsConnected(true);
+        loadKeys();
+      }, 1000);
     } catch (err) {
       setInputStatus('error');
       setInputMessage(err.message || t('apiSettings.invalidKey'));
@@ -68,27 +96,7 @@ export default function APISettingsPage({ embedded = false }) {
     }
   };
 
-  // ============ Management ============
-  const loadKeys = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await apiKeysAPI.getAll();
-      const data = res.api_keys || res.data || [];
-      setKeys(Array.isArray(data) ? data : []);
-    } catch (err) {
-      console.error('Load keys error:', err);
-      // If key was cleared by sondosApiCall (401), switch to manual input
-      if (!hasApiKey()) {
-        setIsConnected(false);
-        return;
-      }
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
+  // ============ Create New Key ============
   const handleCreate = async () => {
     if (!newKeyName.trim()) {
       setToast({ type: 'error', text: t('apiSettings.nameRequired') });
@@ -110,35 +118,32 @@ export default function APISettingsPage({ embedded = false }) {
     }
   };
 
-  const handleDelete = async (id) => {
-    setDeleting(true);
-    try {
-      await apiKeysAPI.delete(id);
-      setKeys(prev => prev.filter(k => (k.id || k._id) !== id));
-      setDeleteTarget(null);
-      setToast({ type: 'success', text: t('apiSettings.deleted') });
-    } catch (err) {
-      console.error('Delete key error:', err);
-      setToast({ type: 'error', text: t('apiSettings.deleteError') });
-    } finally {
-      setDeleting(false);
-    }
-  };
-
-  const handleDisconnect = () => {
-    clearApiKey();
-    setIsConnected(false);
-    setKeys([]);
-    setApiKeyInput("");
-    setInputStatus(null);
-    setToast({ type: 'success', text: t('apiSettings.disconnected') });
-  };
-
   const handleCopy = (text) => {
     navigator.clipboard.writeText(text);
     setCopiedKey(true);
     setTimeout(() => setCopiedKey(false), 2000);
   };
+
+  // ============ Initial loading state ============
+  if (isConnected === null && loading) {
+    return (
+      <div className="space-y-6 max-w-4xl mx-auto">
+        {!embedded && (
+          <div>
+            <h1 className={`text-3xl font-bold ${isDark ? 'text-white' : 'text-gray-900'}`}>
+              {t('apiSettings.title')}
+            </h1>
+            <p className={`mt-1 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+              {t('apiSettings.subtitle')}
+            </p>
+          </div>
+        )}
+        <div className="flex items-center justify-center min-h-[300px]">
+          <Loader2 className={`w-8 h-8 animate-spin ${isDark ? 'text-teal-500' : 'text-teal-600'}`} />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
@@ -189,7 +194,7 @@ export default function APISettingsPage({ embedded = false }) {
       )}
 
       {/* ====== MODE 1: No API Key — Manual Input ====== */}
-      {!isConnected && (
+      {isConnected === false && (
         <div className={`rounded-2xl p-6 border ${isDark ? 'bg-[#111113] border-[#1f1f23]' : 'bg-white border-gray-200'}`}>
           <div className="flex items-center gap-3 mb-6">
             <div className="w-12 h-12 rounded-xl bg-teal-500/10 flex items-center justify-center">
@@ -263,7 +268,7 @@ export default function APISettingsPage({ embedded = false }) {
         </div>
       )}
 
-      {/* ====== MODE 2: Connected — Management ====== */}
+      {/* ====== MODE 2: Connected — Show Keys ====== */}
       {isConnected && (
         <>
           {/* Active Key Banner */}
@@ -273,19 +278,12 @@ export default function APISettingsPage({ embedded = false }) {
             </div>
             <div className="flex-1 min-w-0">
               <p className={`font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>{t('apiSettings.connectedAs')}</p>
-              <p className={`text-sm font-mono ${isDark ? 'text-gray-400' : 'text-gray-500'}`} dir="ltr">{getMaskedApiKey()}</p>
+              <p className={`text-sm font-mono ${isDark ? 'text-gray-400' : 'text-gray-500'}`} dir="ltr">{getMaskedApiKey() || '••••••••'}</p>
             </div>
             <span className="px-3 py-1 rounded-full text-xs font-bold bg-teal-500/10 text-teal-500 flex items-center gap-1">
               <span className="w-1.5 h-1.5 bg-teal-500 rounded-full animate-pulse" />
               {t('apiSettings.active')}
             </span>
-            <button
-              onClick={handleDisconnect}
-              className={`p-2 rounded-lg transition-colors ${isDark ? 'hover:bg-red-500/10 text-gray-500 hover:text-red-400' : 'hover:bg-red-50 text-gray-400 hover:text-red-500'}`}
-              title={t('apiSettings.disconnect')}
-            >
-              <Unplug className="w-5 h-5" />
-            </button>
           </div>
 
           {/* Keys List */}
@@ -338,6 +336,7 @@ export default function APISettingsPage({ embedded = false }) {
                   const name = apiKey.name || `Key #${id}`;
                   const created = apiKey.created_at || apiKey.createdAt;
                   const lastUsed = apiKey.last_used_at || apiKey.lastUsedAt;
+                  const maskedKey = apiKey.key_preview || apiKey.masked_key || null;
 
                   return (
                     <div key={id} className={`flex items-center gap-4 px-6 py-4 transition-colors ${isDark ? 'hover:bg-[#0f0f10]' : 'hover:bg-gray-50'}`}>
@@ -347,21 +346,17 @@ export default function APISettingsPage({ embedded = false }) {
                       <div className="flex-1 min-w-0">
                         <p className={`font-medium truncate ${isDark ? 'text-white' : 'text-gray-900'}`}>{name}</p>
                         <div className={`flex items-center gap-3 text-xs mt-1 ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
+                          {maskedKey && <span className="font-mono" dir="ltr">{maskedKey}</span>}
                           {created && <span>{t('apiSettings.createdAt')}: {new Date(created).toLocaleDateString(isAr ? 'ar-SA' : 'en-US')}</span>}
                           <span>{t('apiSettings.lastUsed')}: {lastUsed ? new Date(lastUsed).toLocaleDateString(isAr ? 'ar-SA' : 'en-US') : t('apiSettings.never')}</span>
                         </div>
                       </div>
-                      <button
-                        onClick={() => setDeleteTarget({ id, name })}
-                        className={`p-2 rounded-lg transition-colors shrink-0 ${
-                          isDark 
-                            ? 'hover:bg-red-500/10 text-gray-500 hover:text-red-400' 
-                            : 'hover:bg-red-50 text-gray-400 hover:text-red-500'
-                        }`}
-                        title={t('apiSettings.delete')}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      {/* Status badge */}
+                      <span className={`px-2.5 py-1 rounded-full text-xs font-medium shrink-0 ${
+                        isDark ? 'bg-teal-500/10 text-teal-400' : 'bg-teal-50 text-teal-600'
+                      }`}>
+                        {t('apiSettings.active')}
+                      </span>
                     </div>
                   );
                 })}
@@ -438,26 +433,6 @@ export default function APISettingsPage({ embedded = false }) {
                 {copiedKey ? t('apiSettings.copied') : t('apiSettings.copyKey')}
               </button>
               <button onClick={() => setCreatedKey(null)} className="flex-1 py-3 bg-gradient-to-l from-teal-500 to-cyan-500 hover:from-teal-400 hover:to-cyan-400 text-white font-bold rounded-xl transition-all">{t('apiSettings.done')}</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ====== Delete Confirm Modal ====== */}
-      {deleteTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setDeleteTarget(null)}>
-          <div className={`w-full max-w-md rounded-2xl border p-6 shadow-2xl ${isDark ? 'bg-[#111113] border-[#1f1f23]' : 'bg-white border-gray-200'}`} onClick={e => e.stopPropagation()}>
-            <div className="text-center mb-4">
-              <div className="w-14 h-14 mx-auto mb-3 rounded-2xl bg-red-500/10 flex items-center justify-center"><Trash2 className="w-7 h-7 text-red-500" /></div>
-              <h3 className={`text-lg font-bold ${isDark ? 'text-white' : 'text-gray-900'}`}>{t('apiSettings.deleteKey')}</h3>
-              <p className={`text-sm mt-2 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>{t('apiSettings.deleteConfirm').replace('{name}', deleteTarget.name)}</p>
-            </div>
-            <div className="flex items-center gap-3 mt-6">
-              <button onClick={() => setDeleteTarget(null)} className={`flex-1 py-3 rounded-xl font-medium border transition-colors ${isDark ? 'bg-[#1a1a1d] border-[#1f1f23] text-white hover:bg-[#222225]' : 'bg-gray-100 border-gray-200 text-gray-700 hover:bg-gray-200'}`}>{t('apiSettings.cancel')}</button>
-              <button onClick={() => handleDelete(deleteTarget.id)} disabled={deleting} className="flex-1 py-3 bg-red-500 hover:bg-red-600 text-white font-bold rounded-xl transition-all flex items-center justify-center gap-2 disabled:opacity-70">
-                {deleting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Trash2 className="w-5 h-5" />}
-                {t('apiSettings.delete')}
-              </button>
             </div>
           </div>
         </div>

@@ -1,7 +1,7 @@
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Home, BarChart3, Users,
-  BookOpen, Link2, Settings, LogOut, Zap, Bot
+  BookOpen, Link2, Settings, LogOut, Zap, Bot, CreditCard
 } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
 import { useLanguage } from '@/hooks/useLanguage';
@@ -19,6 +19,7 @@ export default function Sidebar({ onLogout, user }) {
     { path: '/knowledge', icon: BookOpen, label: t('sidebar.knowledge') },
     { path: '/assistant', icon: Bot, label: t('sidebar.assistant') },
     { path: '/integrations', icon: Link2, label: t('sidebar.integrations') },
+    { path: '/payment', icon: CreditCard, label: t('sidebar.payment') },
     { path: '/settings', icon: Settings, label: t('sidebar.settings') },
   ];
 

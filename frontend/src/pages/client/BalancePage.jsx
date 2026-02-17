@@ -147,14 +147,11 @@ export default function BalancePage({ embedded = false }) {
               <RefreshCw className={`w-5 h-5 ${refreshing ? 'animate-spin' : ''} ${isDark ? 'text-gray-400' : 'text-gray-600'}`} />
             </button>
             <a
-              href="https://app.sondos-ai.com/billing"
-              target="_blank"
-              rel="noopener noreferrer"
+              href="/payment"
               className="flex items-center gap-2 px-5 py-3 bg-gradient-to-l from-teal-500 to-cyan-500 hover:from-teal-400 hover:to-cyan-400 text-white font-bold rounded-xl transition-all shadow-lg shadow-teal-500/25"
             >
               <Plus className="w-5 h-5" />
               {t('bal.recharge')}
-              <ExternalLink className="w-4 h-4" />
             </a>
           </div>
         </div>
@@ -330,9 +327,7 @@ export default function BalancePage({ embedded = false }) {
       {/* Quick Actions */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <a
-          href="https://app.sondos-ai.com/billing"
-          target="_blank"
-          rel="noopener noreferrer"
+          href="/payment"
           className={`flex items-center justify-between p-6 rounded-2xl transition-all hover:scale-[1.02] ${
             isDark 
               ? 'bg-gradient-to-l from-teal-500/20 to-cyan-500/20 border border-teal-500/30 hover:border-teal-500/50' 
@@ -352,13 +347,10 @@ export default function BalancePage({ embedded = false }) {
               </p>
             </div>
           </div>
-          <ExternalLink className={`w-5 h-5 ${isDark ? 'text-gray-400' : 'text-gray-500'}`} />
         </a>
 
         <a
-          href="https://app.sondos-ai.com/billing/history"
-          target="_blank"
-          rel="noopener noreferrer"
+          href="/payment/history"
           className={`flex items-center justify-between p-6 rounded-2xl transition-all hover:scale-[1.02] ${
             isDark 
               ? 'bg-[#111113] border border-[#1f1f23] hover:border-[#2a2a2d]' 
@@ -378,7 +370,6 @@ export default function BalancePage({ embedded = false }) {
               </p>
             </div>
           </div>
-          <ExternalLink className={`w-5 h-5 ${isDark ? 'text-gray-400' : 'text-gray-500'}`} />
         </a>
       </div>
     </div>

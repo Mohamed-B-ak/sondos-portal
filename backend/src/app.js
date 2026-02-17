@@ -13,6 +13,7 @@ const userRoutes = require('./routes/user.routes');
 const adminRoutes = require('./routes/admin.routes');
 const notificationRoutes = require('./routes/notification.routes');
 const sondosRoutes = require('./routes/sondos.routes');
+const paymentRoutes = require('./routes/payment.routes');
 
 const app = express();
 
@@ -46,6 +47,17 @@ app.use(cors({
 }));
 
 // ==================== Body Parsing ====================
+// Raw body for Moyasar webhook signature verification
+app.use('/api/payments/webhook', express.raw({ type: 'application/json' }), (req, res, next) => {
+  req.rawBody = req.body.toString('utf8');
+  try {
+    req.body = JSON.parse(req.rawBody);
+  } catch (e) {
+    // body already parsed
+  }
+  next();
+});
+
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
@@ -85,6 +97,9 @@ app.use('/api/notifications', notificationRoutes);
 
 // Sondos API Proxy (Frontend → Backend → Sondos)
 app.use('/api/sondos', sondosRoutes);
+
+// Payment routes (Moyasar)
+app.use('/api/payments', paymentRoutes);
 
 // ==================== API 404 (before static files) ====================
 app.all('/api/*', (req, res) => {

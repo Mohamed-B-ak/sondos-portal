@@ -10,6 +10,12 @@ export function ThemeProvider({ children }) {
 
   useEffect(() => {
     localStorage.setItem('theme', isDark ? 'dark' : 'light');
+    // Add/remove 'dark' class on <html> for CSS-based dark mode (e.g. Moyasar form)
+    if (isDark) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
   }, [isDark]);
 
   const toggleTheme = () => setIsDark(!isDark);

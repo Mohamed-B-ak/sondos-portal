@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { 
   CreditCard, Phone, Check, AlertCircle, BarChart3, Settings,
   TrendingUp, Calendar, Clock, PhoneIncoming, PhoneOutgoing, Users,
@@ -8,14 +9,16 @@ import { useTheme } from "@/hooks/useTheme";
 import { useLanguage } from "@/hooks/useLanguage";
 import { 
   callsAPI, leadsAPI, campaignsAPI, assistantsAPI, 
-  knowledgebasesAPI, phoneNumbersAPI 
+  knowledgebasesAPI, phoneNumbersAPI, userAPI 
 } from "@/services/api/sondosAPI";
 
 export default function OverviewPage() {
   const { isDark } = useTheme();
   const { t, isAr } = useLanguage();
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [balance, setBalance] = useState(0);
   
   // Data from API
   const [data, setData] = useState({
@@ -52,14 +55,21 @@ export default function OverviewPage() {
     
     try {
       // Fetch all data in parallel
-      const [callsRes, leadsRes, campaignsRes, assistantsRes, kbRes, phonesRes] = await Promise.allSettled([
+      const [callsRes, leadsRes, campaignsRes, assistantsRes, kbRes, phonesRes, userRes] = await Promise.allSettled([
         callsAPI.getAll({ per_page: 50 }),
         leadsAPI.getAll({ per_page: 50 }),
         campaignsAPI.getAll(),
         assistantsAPI.getAll(),
         knowledgebasesAPI.getAll(),
-        phoneNumbersAPI.getAll()
+        phoneNumbersAPI.getAll(),
+        userAPI.me()
       ]);
+
+      // Process user balance
+      if (userRes.status === 'fulfilled') {
+        const u = userRes.value;
+        setBalance(parseFloat(u?.total_balance ?? u?.balance ?? u?.credits ?? 0));
+      }
 
       // Process calls
       let calls = [];
@@ -200,8 +210,7 @@ export default function OverviewPage() {
 
   const { stats, recentCalls, campaigns, assistants } = data;
 
-  // Check if balance is low (mock - replace with real API if available)
-  const balance = 150;
+  // Check if balance is low
   const isLowBalance = balance < 200;
 
   if (loading) {
@@ -248,7 +257,9 @@ export default function OverviewPage() {
             <p className="text-teal-500 font-medium">{t('over.alertLowBalance')}</p>
             <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>{t('over.alertLowBalanceMsg').replace('{balance}', balance)}</p>
           </div>
-          <button className="px-5 py-2.5 bg-gradient-to-l from-teal-500 to-cyan-500 hover:from-teal-400 hover:to-cyan-400 text-white font-bold rounded-xl transition-all flex-shrink-0">
+          <button 
+            onClick={() => navigate('/payment')}
+            className="px-5 py-2.5 bg-gradient-to-l from-teal-500 to-cyan-500 hover:from-teal-400 hover:to-cyan-400 text-white font-bold rounded-xl transition-all flex-shrink-0">
             {t('over.recharge')}
           </button>
         </div>

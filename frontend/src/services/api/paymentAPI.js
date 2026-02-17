@@ -3,9 +3,24 @@
 // =====================================================
 import { apiCall } from './httpClient';
 
+/**
+ * Public fetch (no auth token) for plans on register page
+ */
+async function publicFetch(endpoint) {
+  const res = await fetch(`/api${endpoint}`);
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.message || `HTTP ${res.status}`);
+  return data;
+}
+
 export const paymentAPI = {
   /**
-   * Get payment config (publishable key + plans)
+   * Get plans (PUBLIC — no auth needed, used on register page)
+   */
+  getPublicPlans: () => publicFetch('/payments/plans'),
+
+  /**
+   * Get payment config (publishable key + plans) — requires auth
    */
   getConfig: () => apiCall('/payments/config'),
 

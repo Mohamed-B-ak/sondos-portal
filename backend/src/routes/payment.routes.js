@@ -6,8 +6,9 @@ const { body } = require('express-validator');
 const paymentCtrl = require('../controllers/payment.controller');
 const { protect, adminOnly } = require('../middleware/auth');
 
-// ── Public: Webhook (no auth — Moyasar calls this) ──
+// ── Public routes (no auth) ──
 router.post('/webhook', paymentCtrl.webhook);
+router.get('/plans', paymentCtrl.getPublicPlans);
 
 // ── Protected: Client routes ──
 router.use(protect);

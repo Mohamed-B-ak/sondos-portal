@@ -16,6 +16,40 @@ const User = require('../models/User');
 const moyasar = require('../utils/moyasar');
 
 // ══════════════════════════════════════════════════════
+// GET /api/payments/plans (PUBLIC — no auth)
+// Returns plans for registration page
+// ══════════════════════════════════════════════════════
+exports.getPublicPlans = async (req, res) => {
+  try {
+    const plans = await Plan.find({ isActive: true }).sort({ sortOrder: 1 });
+
+    res.json({
+      success: true,
+      publishableKey: moyasar.getPublishableKey(),
+      plans: plans.map(p => ({
+        id: p._id,
+        name: p.name,
+        nameEn: p.nameEn,
+        description: p.description,
+        descriptionEn: p.descriptionEn,
+        priceHalala: p.priceHalala,
+        priceDisplay: p.priceDisplay,
+        currency: p.currency,
+        period: p.period,
+        features: p.features,
+        limits: p.limits,
+        color: p.color,
+        icon: p.icon,
+        isPopular: p.isPopular,
+      })),
+    });
+  } catch (error) {
+    console.error('[Public Plans]', error.message);
+    res.status(500).json({ success: false, message: 'فشل تحميل الباقات' });
+  }
+};
+
+// ══════════════════════════════════════════════════════
 // GET /api/payments/config
 // Returns Moyasar publishable key + available plans
 // ══════════════════════════════════════════════════════
@@ -79,8 +113,8 @@ exports.createPayment = async (req, res) => {
     } else if (type === 'topup') {
       // شحن رصيد مخصص
       const { amount } = req.body;
-      if (!amount || amount < 1) {
-        return res.status(400).json({ success: false, message: 'المبلغ غير صالح' });
+      if (!amount || amount < 10) {
+        return res.status(400).json({ success: false, message: 'أقل مبلغ للشحن 10 ر.س' });
       }
       amountHalala = Math.round(amount * 100);
       description = `شحن رصيد ${amount} ر.س - سندس AI`;
@@ -255,37 +289,40 @@ exports.webhook = async (req, res) => {
   try {
     const signature = req.headers['x-moyasar-signature'] || '';
     const rawBody = req.rawBody || JSON.stringify(req.body);
-    
-    // التحقق من التوقيع (اختياري إذا لم يتم إعداد السر)
-    if (process.env.MOYASAR_WEBHOOK_SECRET) {
-      const isValid = moyasar.verifyWebhookSignature(rawBody, signature);
+
+    // التحقق من التوقيع (اختياري — يتخطى لو ما في secret)
+    const webhookSecret = process.env.MOYASAR_WEBHOOK_SECRET;
+    if (webhookSecret && signature) {
+      const isValid = moyasar.verifyWebhookSignature(rawBody, signature, webhookSecret);
       if (!isValid) {
         console.warn('[Webhook] Invalid signature');
-        return res.status(401).json({ message: 'Invalid signature' });
+        return res.status(401).json({ error: 'Invalid signature' });
       }
     }
-    
-    const { id, status, amount, currency, metadata } = req.body;
-    
-    console.log(`[Webhook] Payment ${id} → ${status}`);
-    
-    // البحث عن الدفع
+
+    const { id, status } = req.body;
+    if (!id || !status) {
+      return res.status(400).json({ error: 'Missing id or status' });
+    }
+
+    // البحث عن الدفعة
     let payment = await Payment.findOne({ moyasarPaymentId: id });
-    
-    // لو ما لقينا بالـ moyasarId، نبحث بالـ metadata
-    if (!payment && metadata?.payment_id) {
-      payment = await Payment.findById(metadata.payment_id);
+
+    // لو ما لقيناها بالـ moyasarPaymentId، نبحث بالـ metadata
+    if (!payment && req.body.metadata?.payment_id) {
+      payment = await Payment.findById(req.body.metadata.payment_id);
+      if (payment) {
+        payment.moyasarPaymentId = id;
+      }
     }
-    
+
     if (!payment) {
-      console.warn(`[Webhook] Payment not found: ${id}`);
-      return res.status(200).json({ received: true }); // Always return 200 to Moyasar
+      console.warn(`[Webhook] Payment not found for Moyasar ID: ${id}`);
+      return res.status(200).json({ received: true, warning: 'Payment not found' });
     }
-    
-    // تحديث الحالة
-    payment.moyasarPaymentId = id;
+
+    // تحديث الرد من مُيسّر
     payment.moyasarResponse = req.body;
-    
     if (req.body.source) {
       payment.source = {
         type: req.body.source.type || '',

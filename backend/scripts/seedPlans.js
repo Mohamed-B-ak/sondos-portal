@@ -10,6 +10,7 @@ const PLANS = [
   {
     name: 'الباقة البرونزية',
     nameEn: 'Bronze Plan',
+    planCode: 'PLN-001',
     slug: 'bronze',
     description: 'مثالية للعيادات الصغيرة والبدايات',
     descriptionEn: 'Perfect for small clinics and startups',
@@ -32,6 +33,7 @@ const PLANS = [
   {
     name: 'الباقة الفضية',
     nameEn: 'Silver Plan',
+    planCode: 'PLN-002',
     slug: 'silver',
     description: 'للمجمعات الطبية المتوسطة',
     descriptionEn: 'For mid-size medical complexes',
@@ -54,6 +56,7 @@ const PLANS = [
   {
     name: 'الباقة الذهبية',
     nameEn: 'Gold Plan',
+    planCode: 'PLN-003',
     slug: 'gold',
     description: 'للمستشفيات والمراكز الكبيرة',
     descriptionEn: 'For hospitals and large centers',

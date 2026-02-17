@@ -212,7 +212,7 @@ export default function RegisterPage() {
         company: formData.company,
         timezone: formData.timezone,
         password: formData.password,
-        planId: formData.selectedPlan?.id || null,
+        planId: formData.selectedPlan?.planCode || null,
       });
 
       if (response.success) {

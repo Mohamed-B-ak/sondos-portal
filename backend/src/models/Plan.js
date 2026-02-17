@@ -9,6 +9,11 @@ const planSchema = new mongoose.Schema({
     required: [true, 'اسم الباقة مطلوب'],
     trim: true
   },
+  planCode: {
+    type: String,
+    unique: true,
+    trim: true
+  },
   nameEn: {
     type: String,
     trim: true,

@@ -9,6 +9,33 @@ import { useLanguage } from "@/hooks/useLanguage";
 import { userAPI, callsAPI } from "@/services/api/sondosAPI";
 import { paymentAPI } from "@/services/api/paymentAPI";
 
+// ── Dark mode CSS for Moyasar form ──
+const MOYASAR_DARK_CSS = `
+  .topup-mysr-form label, .topup-mysr-form .mysr-label { color: #d1d5db !important; }
+  .topup-mysr-form input, .topup-mysr-form select, .topup-mysr-form .mysr-input {
+    background-color: #0a0a0b !important; border: 1px solid #2a2a2d !important;
+    color: #ffffff !important; border-radius: 10px !important; padding: 12px 14px !important;
+  }
+  .topup-mysr-form input::placeholder { color: #6b7280 !important; }
+  .topup-mysr-form input:focus { border-color: #14b8a6 !important; box-shadow: 0 0 0 2px rgba(20,184,166,0.25) !important; }
+  .topup-mysr-form .mysr-methods .mysr-method { background-color: #111113 !important; border-color: #1f1f23 !important; color: #d1d5db !important; }
+  .topup-mysr-form .mysr-methods .mysr-method.active { background-color: #0a0a0b !important; border-color: #14b8a6 !important; color: #fff !important; }
+  .topup-mysr-form button[type="submit"], .topup-mysr-form .mysr-btn-submit, .topup-mysr-form .mysr-btn {
+    background: linear-gradient(to left, #14b8a6, #06b6d4) !important; color: #fff !important;
+    border: none !important; border-radius: 12px !important; padding: 14px !important; font-weight: 700 !important;
+  }
+  .topup-mysr-form .mysr-error { color: #f87171 !important; }
+  .topup-mysr-form { direction: ltr; text-align: left; }
+`;
+const MOYASAR_LIGHT_CSS = `
+  .topup-mysr-form input { border-radius: 10px !important; padding: 12px 14px !important; }
+  .topup-mysr-form button[type="submit"], .topup-mysr-form .mysr-btn-submit, .topup-mysr-form .mysr-btn {
+    background: linear-gradient(to left, #14b8a6, #06b6d4) !important; color: #fff !important;
+    border: none !important; border-radius: 12px !important; padding: 14px !important; font-weight: 700 !important;
+  }
+  .topup-mysr-form { direction: ltr; text-align: left; }
+`;
+
 // Preset topup amounts
 const TOPUP_AMOUNTS = [50, 100, 200, 500];
 const MIN_CUSTOM_AMOUNT = 10;
@@ -36,6 +63,17 @@ export default function BalancePage({ embedded = false }) {
   const moyasarInitialized = useRef(false);
 
   useEffect(() => { loadData(); }, []);
+
+  // Inject Moyasar dark/light CSS for topup modal
+  useEffect(() => {
+    let styleEl = document.getElementById('moyasar-topup-css');
+    if (!styleEl) {
+      styleEl = document.createElement('style');
+      styleEl.id = 'moyasar-topup-css';
+      document.head.appendChild(styleEl);
+    }
+    styleEl.textContent = isDark ? MOYASAR_DARK_CSS : MOYASAR_LIGHT_CSS;
+  }, [isDark]);
 
   const loadData = async () => {
     setLoading(true);
@@ -140,7 +178,7 @@ export default function BalancePage({ embedded = false }) {
         publishable_api_key: cfg.publishableKey,
         callback_url: cfg.callbackUrl,
         supported_networks: ['visa', 'mastercard', 'mada'],
-        methods: ['creditcard', 'applepay', 'stcpay'],
+        methods: ['creditcard', 'stcpay'],
         metadata: cfg.metadata,
         on_initiating: function () {
           setTopupStep('processing');

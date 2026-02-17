@@ -29,6 +29,69 @@ const PERIOD_LABELS = {
   one_time: { ar: 'مرة واحدة', en: 'one-time' },
 };
 
+// ── Dark mode CSS for Moyasar form ──
+const MOYASAR_DARK_CSS = `
+  .mysr-form label,
+  .mysr-form .mysr-label { color: #d1d5db !important; }
+  .mysr-form input,
+  .mysr-form select,
+  .mysr-form .mysr-input {
+    background-color: #0a0a0b !important;
+    border: 1px solid #2a2a2d !important;
+    color: #ffffff !important;
+    border-radius: 10px !important;
+    padding: 12px 14px !important;
+  }
+  .mysr-form input::placeholder { color: #6b7280 !important; }
+  .mysr-form input:focus {
+    border-color: #14b8a6 !important;
+    box-shadow: 0 0 0 2px rgba(20, 184, 166, 0.25) !important;
+  }
+  .mysr-form .mysr-methods .mysr-method {
+    background-color: #111113 !important;
+    border-color: #1f1f23 !important;
+    color: #d1d5db !important;
+  }
+  .mysr-form .mysr-methods .mysr-method.active {
+    background-color: #0a0a0b !important;
+    border-color: #14b8a6 !important;
+    color: #ffffff !important;
+  }
+  .mysr-form button[type="submit"],
+  .mysr-form .mysr-btn-submit,
+  .mysr-form .mysr-btn {
+    background: linear-gradient(to left, #14b8a6, #06b6d4) !important;
+    color: #ffffff !important;
+    border: none !important;
+    border-radius: 12px !important;
+    padding: 14px !important;
+    font-weight: 700 !important;
+    font-size: 16px !important;
+  }
+  .mysr-form .mysr-error { color: #f87171 !important; }
+  .mysr-form .mysr-networks img { filter: brightness(1.2); }
+  .mysr-form { direction: ltr; text-align: left; }
+`;
+
+const MOYASAR_LIGHT_CSS = `
+  .mysr-form input {
+    border-radius: 10px !important;
+    padding: 12px 14px !important;
+  }
+  .mysr-form button[type="submit"],
+  .mysr-form .mysr-btn-submit,
+  .mysr-form .mysr-btn {
+    background: linear-gradient(to left, #14b8a6, #06b6d4) !important;
+    color: #ffffff !important;
+    border: none !important;
+    border-radius: 12px !important;
+    padding: 14px !important;
+    font-weight: 700 !important;
+    font-size: 16px !important;
+  }
+  .mysr-form { direction: ltr; text-align: left; }
+`;
+
 export default function PaymentPage({ embedded = false }) {
   const { isDark } = useTheme();
   const { t, isAr } = useLanguage();
@@ -46,6 +109,18 @@ export default function PaymentPage({ embedded = false }) {
 
   const moyasarFormRef = useRef(null);
   const moyasarInitialized = useRef(false);
+
+  // Inject Moyasar dark/light CSS
+  useEffect(() => {
+    let styleEl = document.getElementById('moyasar-theme-css');
+    if (!styleEl) {
+      styleEl = document.createElement('style');
+      styleEl.id = 'moyasar-theme-css';
+      document.head.appendChild(styleEl);
+    }
+    styleEl.textContent = isDark ? MOYASAR_DARK_CSS : MOYASAR_LIGHT_CSS;
+    return () => { /* keep style on unmount — other pages may use it */ };
+  }, [isDark]);
 
   // Load config + plans
   useEffect(() => {
@@ -127,13 +202,12 @@ export default function PaymentPage({ embedded = false }) {
         publishable_api_key: cfg.publishableKey,
         callback_url: cfg.callbackUrl,
         supported_networks: ['visa', 'mastercard', 'mada'],
-        methods: ['creditcard', 'applepay', 'stcpay'],
+        methods: ['creditcard', 'stcpay'],
         metadata: cfg.metadata,
         on_initiating: function() {
           setStep('processing');
         },
         on_completed: async function(payment) {
-          // حفظ بيانات الدفع قبل الـ redirect
           try {
             const verifyRes = await paymentAPI.verifyPayment(
               cfg.metadata.payment_id,

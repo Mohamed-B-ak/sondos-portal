@@ -1,9 +1,17 @@
 const { validationResult } = require('express-validator');
 const User = require('../models/User');
+const Plan = require('../models/Plan');
 const Notification = require('../models/Notification');
 const TokenBlacklist = require('../models/TokenBlacklist');
 const { generateTokenPair, verifyRefreshToken, generateAccessToken } = require('../utils/token');
 const { registerOnAutoCalls, setupClientWithPlan } = require('../utils/autocalls');
+
+// Map plan slug → external service plan code
+const SLUG_TO_PLAN_CODE = {
+  'bronze': 'PLN-001',
+  'silver': 'PLN-002',
+  'gold': 'PLN-003',
+};
 
 // POST /api/auth/register
 exports.register = async (req, res) => {
@@ -28,15 +36,43 @@ exports.register = async (req, res) => {
     }
 
     let sondosApiKey = '';
+    let resolvedPlanCode = null;
 
+    // If planId provided, look up the plan from DB to get the correct code
     if (planId) {
       try {
+        // planId could be MongoDB _id, planCode (PLN-001), or slug (bronze)
+        let plan = null;
+        if (planId.match(/^[0-9a-fA-F]{24}$/)) {
+          plan = await Plan.findById(planId);
+        }
+        if (!plan) {
+          plan = await Plan.findOne({ planCode: planId });
+        }
+        if (!plan) {
+          plan = await Plan.findOne({ slug: planId });
+        }
+
+        if (plan) {
+          // Use planCode from DB if exists, otherwise derive from slug
+          resolvedPlanCode = plan.planCode || SLUG_TO_PLAN_CODE[plan.slug] || planId;
+        } else {
+          // If plan not found in DB, use planId as-is (might be PLN-001 directly)
+          resolvedPlanCode = planId;
+        }
+      } catch (lookupErr) {
+        console.error('[Register] Plan lookup failed:', lookupErr.message);
+        resolvedPlanCode = planId; // fallback
+      }
+
+      try {
+        console.log(`[Register] Calling setupClientWithPlan with plan_id: ${resolvedPlanCode}`);
         const setupResult = await setupClientWithPlan({
           name,
           email: email.toLowerCase(),
           password,
           timezone: timezone || 'Asia/Riyadh',
-          planId,
+          planId: resolvedPlanCode,
         });
         sondosApiKey = setupResult.apiKey;
       } catch (setupError) {

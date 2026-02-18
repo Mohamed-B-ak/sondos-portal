@@ -14,6 +14,7 @@ const adminRoutes = require('./routes/admin.routes');
 const notificationRoutes = require('./routes/notification.routes');
 const sondosRoutes = require('./routes/sondos.routes');
 const paymentRoutes = require('./routes/payment.routes');
+const publicRoutes = require('./routes/public.routes');
 
 const app = express();
 
@@ -100,6 +101,9 @@ app.use('/api/sondos', sondosRoutes);
 
 // Payment routes (Moyasar)
 app.use('/api/payments', paymentRoutes);
+
+// Public routes (external systems — API Key auth, no user token)
+app.use('/api/public', publicRoutes);
 
 // ==================== API 404 (before static files) ====================
 app.all('/api/*', (req, res) => {

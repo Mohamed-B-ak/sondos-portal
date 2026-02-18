@@ -73,6 +73,11 @@ const userSchema = new mongoose.Schema({
     type: Date,
     default: null
   },
+  // التحكم بالأتمتة — هل المكالمات التلقائية مفعلة؟
+  automationEnabled: {
+    type: Boolean,
+    default: true
+  },
   // Selected plan during registration
   planId: {
     type: String,
@@ -130,7 +135,8 @@ userSchema.methods.toPublicJSON = function() {
     sondosApiKeyMasked: apiKey.length > 8
       ? apiKey.substring(0, 4) + '••••' + apiKey.substring(apiKey.length - 4)
       : apiKey ? '••••••••' : '',
-    planId: this.planId
+    planId: this.planId,
+    automationEnabled: this.automationEnabled
   };
 };
 
@@ -155,7 +161,8 @@ userSchema.methods.toAdminJSON = function() {
     createdAt: this.createdAt,
     updatedAt: this.updatedAt,
     lastLogin: this.lastLogin,
-    planId: this.planId
+    planId: this.planId,
+    automationEnabled: this.automationEnabled
   };
 };
 

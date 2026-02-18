@@ -643,6 +643,7 @@
     "title": "الإعدادات",
     "subtitle": "إعدادات الحساب والنظام",
     "tabGeneral": "عام",
+    "tabAutomation": "الأتمتة",
     "tabBalance": "الرصيد",
     "tabApi": "إعدادات API",
     "savedSuccess": "تم حفظ التغييرات بنجاح",

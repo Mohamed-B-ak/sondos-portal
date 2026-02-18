@@ -86,3 +86,51 @@ exports.changePassword = async (req, res) => {
     res.status(500).json({ success: false, message: 'حدث خطأ في الخادم' });
   }
 };
+
+// ══════════════════════════════════════════════════════
+// PUT /api/user/automation — تفعيل/إيقاف الأتمتة
+// ══════════════════════════════════════════════════════
+exports.updateAutomation = async (req, res) => {
+  try {
+    const { enabled } = req.body;
+
+    if (typeof enabled !== 'boolean') {
+      return res.status(400).json({
+        success: false,
+        message: 'يرجى إرسال قيمة صحيحة (true أو false)'
+      });
+    }
+
+    const user = await User.findByIdAndUpdate(
+      req.user._id,
+      { automationEnabled: enabled },
+      { new: true }
+    );
+
+    res.json({
+      success: true,
+      message: enabled ? 'تم تفعيل الأتمتة بنجاح' : 'تم إيقاف الأتمتة بنجاح',
+      data: {
+        automationEnabled: user.automationEnabled
+      }
+    });
+  } catch (error) {
+    console.error('[Update Automation]', error.message);
+    res.status(500).json({ success: false, message: 'حدث خطأ في الخادم' });
+  }
+};
+
+// GET /api/user/automation — جلب حالة الأتمتة (محمي)
+exports.getAutomation = async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id);
+    res.json({
+      success: true,
+      data: {
+        automationEnabled: user.automationEnabled
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'حدث خطأ في الخادم' });
+  }
+};

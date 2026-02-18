@@ -21,4 +21,10 @@ router.put('/sondos-key', [
   body('apiKey').notEmpty().withMessage('مفتاح API مطلوب')
 ], userCtrl.updateSondosKey);
 
+// Automation control
+router.get('/automation', userCtrl.getAutomation);
+router.put('/automation', [
+  body('enabled').isBoolean().withMessage('يرجى إرسال قيمة صحيحة (true أو false)')
+], userCtrl.updateAutomation);
+
 module.exports = router;

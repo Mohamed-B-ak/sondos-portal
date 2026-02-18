@@ -643,6 +643,7 @@
     "title": "Settings",
     "subtitle": "Account and system settings",
     "tabGeneral": "General",
+    "tabAutomation": "Automation",
     "tabBalance": "Balance",
     "tabApi": "API Settings",
     "savedSuccess": "Changes saved successfully",

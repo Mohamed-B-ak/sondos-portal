@@ -54,14 +54,29 @@ exports.registerWithPayment = async (req, res) => {
       return res.status(404).json({ success: false, message: 'الباقة غير متاحة' });
     }
 
-    // ── 3. Verify Moyasar payment ──
+    // ── 3. Verify Moyasar payment (with retry for 3DS delay) ──
     let moyasarPayment;
-    try {
-      moyasarPayment = await moyasar.fetchPayment(moyasarPaymentId);
-      console.log(`[RegisterWithPayment] Moyasar status: ${moyasarPayment.status}, amount: ${moyasarPayment.amount}`);
-    } catch (err) {
-      console.error('[RegisterWithPayment] Moyasar verify failed:', err.message);
-      return res.status(400).json({ success: false, message: 'فشل التحقق من عملية الدفع' });
+    const MAX_RETRIES = 3;
+    const RETRY_DELAY = 2000; // 2 seconds
+
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        moyasarPayment = await moyasar.fetchPayment(moyasarPaymentId);
+        console.log(`[RegisterWithPayment] Moyasar attempt ${attempt}: status=${moyasarPayment.status}, amount=${moyasarPayment.amount}`);
+
+        if (moyasarPayment.status === 'paid') break;
+
+        // If not paid yet and we have retries left, wait and try again
+        if (attempt < MAX_RETRIES) {
+          await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
+        }
+      } catch (err) {
+        console.error(`[RegisterWithPayment] Moyasar verify attempt ${attempt} failed:`, err.message);
+        if (attempt === MAX_RETRIES) {
+          return res.status(400).json({ success: false, message: 'فشل التحقق من عملية الدفع' });
+        }
+        await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
+      }
     }
 
     if (moyasarPayment.status !== 'paid') {

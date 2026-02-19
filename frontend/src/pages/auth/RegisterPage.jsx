@@ -184,12 +184,7 @@ export default function RegisterPage() {
       },
     }));
 
-    if (status !== 'paid') {
-      setStep(3);
-      setError('فشل الدفع — يرجى المحاولة مرة أخرى');
-      return;
-    }
-
+    // Don't rely on URL status — send to backend, it will verify with Moyasar API
     setRegistering(true);
     setStep(3);
 

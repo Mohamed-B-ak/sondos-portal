@@ -15,7 +15,7 @@ export default function Sidebar({ onLogout, user }) {
   const menuItems = [
     { path: '/', icon: Home, label: t('sidebar.overview') },
     { path: '/dashboard', icon: BarChart3, label: t('sidebar.dashboard') },
-
+    { path: '/settings', icon: Settings, label: t('sidebar.settings') },
   ];
 
   const userName = user?.name || user?.companyName || user?.email?.split('@')[0] || t('sidebar.defaultUser');

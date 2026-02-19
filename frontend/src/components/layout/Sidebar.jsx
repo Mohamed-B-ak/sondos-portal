@@ -15,12 +15,7 @@ export default function Sidebar({ onLogout, user }) {
   const menuItems = [
     { path: '/', icon: Home, label: t('sidebar.overview') },
     { path: '/dashboard', icon: BarChart3, label: t('sidebar.dashboard') },
-    { path: '/leads', icon: Users, label: t('sidebar.leads') },
-    { path: '/knowledge', icon: BookOpen, label: t('sidebar.knowledge') },
-    { path: '/assistant', icon: Bot, label: t('sidebar.assistant') },
-    { path: '/integrations', icon: Link2, label: t('sidebar.integrations') },
-    { path: '/payment', icon: CreditCard, label: t('sidebar.payment') },
-    { path: '/settings', icon: Settings, label: t('sidebar.settings') },
+
   ];
 
   const userName = user?.name || user?.companyName || user?.email?.split('@')[0] || t('sidebar.defaultUser');

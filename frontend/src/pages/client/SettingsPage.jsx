@@ -3,11 +3,13 @@ import { useLocation } from "react-router-dom";
 import { 
   Settings, 
   Key,
-  Wallet
+  Wallet,
+  Zap
 } from "lucide-react";
 import { useTheme } from "@/hooks/useTheme";
 import { useLanguage } from "@/hooks/useLanguage";
 import GeneralSettings from "./settings/GeneralSettings";
+import AutomationSettings from "./settings/AutomationSettings";
 import BalancePage from "./BalancePage";
 import APISettingsPage from "./APISettingsPage";
 
@@ -21,12 +23,13 @@ export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState(() => {
     const params = new URLSearchParams(location.search);
     const tab = params.get('tab');
-    if (tab === 'balance' || tab === 'api') return tab;
+    if (tab === 'automation' || tab === 'balance' || tab === 'api') return tab;
     return 'general';
   });
 
   const tabs = [
     { id: 'general', icon: Settings, label: t('sett.tabGeneral') },
+    { id: 'automation', icon: Zap, label: t('sett.tabAutomation') || 'الأتمتة' },
     { id: 'balance', icon: Wallet, label: t('sett.tabBalance') },
     { id: 'api', icon: Key, label: t('sett.tabApi') },
   ];
@@ -75,6 +78,7 @@ export default function SettingsPage() {
 
       {/* Tab Content */}
       {activeTab === 'general' && <GeneralSettings />}
+      {activeTab === 'automation' && <AutomationSettings />}
       {activeTab === 'balance' && <BalancePage embedded />}
       {activeTab === 'api' && <APISettingsPage embedded />}
     </div>

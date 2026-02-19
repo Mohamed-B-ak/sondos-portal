@@ -158,12 +158,6 @@ export default function RegisterPage() {
 
   // ── Handle Moyasar redirect callback (for STC Pay etc.) ──
   const handleMoyasarCallback = async (moyasarId, status) => {
-    if (status !== 'paid') {
-      setStep(3);
-      setError('فشل الدفع — يرجى المحاولة مرة أخرى');
-      return;
-    }
-
     // Retrieve saved registration data from sessionStorage
     const savedData = sessionStorage.getItem('sondos_register_data');
     if (!savedData) {
@@ -173,6 +167,29 @@ export default function RegisterPage() {
     }
 
     const regData = JSON.parse(savedData);
+
+    // Restore form data for display
+    setFormData(prev => ({
+      ...prev,
+      name: regData.name,
+      email: regData.email,
+      phone: regData.phone,
+      company: regData.company,
+      timezone: regData.timezone,
+      password: regData.password,
+      selectedPlan: {
+        id: regData.planId,
+        name: regData.planName,
+        priceDisplay: regData.planPrice,
+      },
+    }));
+
+    if (status !== 'paid') {
+      setStep(3);
+      setError('فشل الدفع — يرجى المحاولة مرة أخرى');
+      return;
+    }
+
     setRegistering(true);
     setStep(3);
 
@@ -190,7 +207,6 @@ export default function RegisterPage() {
 
       if (response.success) {
         sessionStorage.removeItem('sondos_register_data');
-        setFormData(prev => ({ ...prev, name: regData.name, selectedPlan: { name: regData.planName } }));
         setStep(4);
         setTimeout(() => navigate("/"), 3000);
       }
@@ -275,6 +291,7 @@ export default function RegisterPage() {
           password: formData.password,
           planId: formData.selectedPlan.id,
           planName: formData.selectedPlan.name,
+          planPrice: formData.selectedPlan.priceDisplay,
         }));
 
         setStep(3);
@@ -315,7 +332,7 @@ export default function RegisterPage() {
     }
 
     const plan = formData.selectedPlan;
-    const callbackUrl = `${window.location.origin}/register?id={id}&status={status}`;
+    const callbackUrl = `${window.location.origin}/register`;
 
     // Load Moyasar script if not loaded
     if (!window.Moyasar) {

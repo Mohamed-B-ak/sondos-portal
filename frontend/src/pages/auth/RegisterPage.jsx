@@ -1,4 +1,4 @@
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useState, useEffect, useRef } from "react";
 import { 
   AlertCircle, 
@@ -70,7 +70,7 @@ const COLOR_MAP_LIGHT = {
   orange: { bg: 'border-orange-400', text: 'text-orange-600', badge: 'bg-orange-100 text-orange-700', icon: 'bg-orange-100 text-orange-600' },
   gray:   { bg: 'border-gray-400',   text: 'text-gray-600',   badge: 'bg-gray-100 text-gray-700',     icon: 'bg-gray-100 text-gray-600' },
   yellow: { bg: 'border-yellow-500',  text: 'text-yellow-700', badge: 'bg-yellow-100 text-yellow-800', icon: 'bg-yellow-100 text-yellow-700' },
-  teal:   { bg: 'border-teal-500',    text: 'text-teal-600',   badge: 'bg-teal-100 text-teal-700',     icon: 'bg-teal-100 text-teal-600' },
+  teal:   { bg: 'border-teal-500',    text: 'text-teal-600',   badge: 'bg-teal-100 text-teal-700',     icon: 'bg-teal-100 text-teal-700' },
 };
 
 const PERIOD_LABELS = {
@@ -105,14 +105,15 @@ const TIMEZONES = [
 
 export default function RegisterPage() {
   const navigate = useNavigate();
-  const { register: authRegister } = useAuth();
+  const [searchParams] = useSearchParams();
+  const { register: authRegister, registerWithPayment } = useAuth();
   const { isDark, toggleTheme } = useTheme();
 
   // ── State ──
   const [formData, setFormData] = useState({
     name: "", email: "", phone: "", company: "",
     timezone: "Asia/Riyadh", password: "", confirmPassword: "",
-    selectedPlan: null, // DB plan object (not just ID)
+    selectedPlan: null,
   });
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -120,20 +121,29 @@ export default function RegisterPage() {
   const [loading, setLoading] = useState(false);
   // Steps: 0=Plans, 1=Info, 2=Password, 3=Payment(Moyasar), 4=Success
   const [step, setStep] = useState(0);
+  const [registering, setRegistering] = useState(false);
 
   // ── Plans from DB ──
   const [plans, setPlans] = useState([]);
   const [plansLoading, setPlansLoading] = useState(true);
+  const [publishableKey, setPublishableKey] = useState('');
 
   // ── Moyasar ──
-  const [paymentData, setPaymentData] = useState(null);
-  const [paymentCreating, setPaymentCreating] = useState(false);
   const moyasarInitialized = useRef(false);
 
   // Load plans from DB on mount
   useEffect(() => {
     loadPlans();
   }, []);
+
+  // ── Handle callback from Moyasar redirect (STC Pay / Apple Pay) ──
+  useEffect(() => {
+    const moyasarId = searchParams.get('id');
+    const moyasarStatus = searchParams.get('status');
+    if (moyasarId && moyasarStatus) {
+      handleMoyasarCallback(moyasarId, moyasarStatus);
+    }
+  }, [searchParams]);
 
   // Inject Moyasar dark/light CSS
   useEffect(() => {
@@ -146,11 +156,57 @@ export default function RegisterPage() {
     styleEl.textContent = isDark ? MOYASAR_DARK_CSS : MOYASAR_LIGHT_CSS;
   }, [isDark]);
 
+  // ── Handle Moyasar redirect callback (for STC Pay etc.) ──
+  const handleMoyasarCallback = async (moyasarId, status) => {
+    if (status !== 'paid') {
+      setStep(3);
+      setError('فشل الدفع — يرجى المحاولة مرة أخرى');
+      return;
+    }
+
+    // Retrieve saved registration data from sessionStorage
+    const savedData = sessionStorage.getItem('sondos_register_data');
+    if (!savedData) {
+      setError('بيانات التسجيل غير موجودة — يرجى إعادة التسجيل');
+      setStep(0);
+      return;
+    }
+
+    const regData = JSON.parse(savedData);
+    setRegistering(true);
+    setStep(3);
+
+    try {
+      const response = await registerWithPayment({
+        name: regData.name,
+        email: regData.email,
+        phone: regData.phone,
+        company: regData.company,
+        timezone: regData.timezone,
+        password: regData.password,
+        planId: regData.planId,
+        moyasarPaymentId: moyasarId,
+      });
+
+      if (response.success) {
+        sessionStorage.removeItem('sondos_register_data');
+        setFormData(prev => ({ ...prev, name: regData.name, selectedPlan: { name: regData.planName } }));
+        setStep(4);
+        setTimeout(() => navigate("/"), 3000);
+      }
+    } catch (err) {
+      setError(err.message || 'فشل إنشاء الحساب بعد الدفع — تواصل مع الدعم');
+    } finally {
+      setRegistering(false);
+    }
+  };
+
   const loadPlans = async () => {
     setPlansLoading(true);
     try {
       const data = await paymentAPI.getPublicPlans();
       setPlans(data.plans || []);
+      setPublishableKey(data.publishableKey || '');
     } catch (err) {
       console.error('Failed to load plans:', err);
     } finally {
@@ -196,7 +252,9 @@ export default function RegisterPage() {
     if (step === 1 && validateStep1()) { setStep(2); setError(""); }
   };
 
-  // ── Submit: Register then Payment ──
+  // ══════════════════════════════════════════════════════
+  // Submit: Different flow based on plan selection
+  // ══════════════════════════════════════════════════════
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!validateStep2()) return;
@@ -205,25 +263,37 @@ export default function RegisterPage() {
     setError("");
 
     try {
-      const response = await authRegister({
-        name: formData.name,
-        email: formData.email,
-        phone: formData.phone,
-        company: formData.company,
-        timezone: formData.timezone,
-        password: formData.password,
-        planId: formData.selectedPlan?.id || null,
-      });
+      if (formData.selectedPlan) {
+        // ═══ WITH PLAN: Go to payment step (DON'T register yet) ═══
+        // Save registration data to sessionStorage (for STC Pay redirect fallback)
+        sessionStorage.setItem('sondos_register_data', JSON.stringify({
+          name: formData.name,
+          email: formData.email,
+          phone: formData.phone,
+          company: formData.company,
+          timezone: formData.timezone,
+          password: formData.password,
+          planId: formData.selectedPlan.id,
+          planName: formData.selectedPlan.name,
+        }));
 
-      if (response.success) {
-        // If user chose a plan → go to payment step
-        if (formData.selectedPlan) {
-          setStep(3);
-          setLoading(false);
-          // Create payment after small delay (allow auth state to settle)
-          setTimeout(() => initPayment(), 300);
-        } else {
-          // No plan → go to success
+        setStep(3);
+        setLoading(false);
+        // Initialize Moyasar form after DOM update
+        setTimeout(() => initMoyasarForm(), 300);
+
+      } else {
+        // ═══ WITHOUT PLAN: Register directly (no payment) ═══
+        const response = await authRegister({
+          name: formData.name,
+          email: formData.email,
+          phone: formData.phone,
+          company: formData.company,
+          timezone: formData.timezone,
+          password: formData.password,
+        });
+
+        if (response.success) {
           setStep(4);
           setTimeout(() => navigate("/"), 2000);
         }
@@ -234,27 +304,20 @@ export default function RegisterPage() {
     }
   };
 
-  // ── Moyasar Payment ──
-  const initPayment = async () => {
-    setPaymentCreating(true);
-    setError("");
-    try {
-      const res = await paymentAPI.createPayment({
-        planId: formData.selectedPlan.id,
-        type: 'subscription',
-      });
-      setPaymentData(res);
-      setTimeout(() => initMoyasarForm(res.moyasar), 200);
-    } catch (err) {
-      setError(err.message || "فشل إنشاء عملية الدفع");
-    } finally {
-      setPaymentCreating(false);
+  // ══════════════════════════════════════════════════════
+  // Moyasar Payment Form (NO auth needed — uses public key)
+  // ══════════════════════════════════════════════════════
+  const initMoyasarForm = () => {
+    if (moyasarInitialized.current) return;
+    if (!publishableKey || !formData.selectedPlan) {
+      setError('فشل تحميل بيانات الدفع');
+      return;
     }
-  };
 
-  const initMoyasarForm = (cfg) => {
-    if (moyasarInitialized.current || !cfg) return;
+    const plan = formData.selectedPlan;
+    const callbackUrl = `${window.location.origin}/register?id={id}&status={status}`;
 
+    // Load Moyasar script if not loaded
     if (!window.Moyasar) {
       const script = document.createElement('script');
       script.src = 'https://cdn.moyasar.com/mpf/1.14.0/moyasar.js';
@@ -263,35 +326,34 @@ export default function RegisterPage() {
         link.rel = 'stylesheet';
         link.href = 'https://cdn.moyasar.com/mpf/1.14.0/moyasar.css';
         document.head.appendChild(link);
-        createMoyasarForm(cfg);
+        createMoyasarForm(plan, callbackUrl);
       };
       document.head.appendChild(script);
     } else {
-      createMoyasarForm(cfg);
+      createMoyasarForm(plan, callbackUrl);
     }
   };
 
-  const createMoyasarForm = (cfg) => {
-    if (!cfg || moyasarInitialized.current) return;
+  const createMoyasarForm = (plan, callbackUrl) => {
+    if (moyasarInitialized.current) return;
     const container = document.querySelector('.mysr-form');
     if (container) container.innerHTML = '';
 
     try {
       window.Moyasar.init({
         element: '.mysr-form',
-        amount: cfg.amount,
-        currency: cfg.currency,
-        description: cfg.description,
-        publishable_api_key: cfg.publishableKey,
-        callback_url: cfg.callbackUrl,
+        amount: plan.priceHalala,
+        currency: plan.currency || 'SAR',
+        description: `اشتراك ${plan.name} - سندس AI`,
+        publishable_api_key: publishableKey,
+        callback_url: callbackUrl,
         supported_networks: ['visa', 'mastercard', 'mada'],
         methods: ['creditcard', 'stcpay'],
-        metadata: cfg.metadata,
         on_completed: async function (payment) {
-          try {
-            await paymentAPI.verifyPayment(cfg.metadata.payment_id, payment.id);
-          } catch (e) {
-            console.error('Pre-redirect verify:', e);
+          // ═══ CREDIT CARD: on_completed fires before redirect ═══
+          // Register the user NOW with the moyasar payment ID
+          if (payment.status === 'paid') {
+            await handlePaymentCompleted(payment.id);
           }
         },
       });
@@ -302,9 +364,59 @@ export default function RegisterPage() {
     }
   };
 
+  // ══════════════════════════════════════════════════════
+  // After payment succeeds → Register via register-with-payment
+  // ══════════════════════════════════════════════════════
+  const handlePaymentCompleted = async (moyasarPaymentId) => {
+    setRegistering(true);
+    setError("");
+
+    try {
+      const response = await registerWithPayment({
+        name: formData.name,
+        email: formData.email,
+        phone: formData.phone,
+        company: formData.company,
+        timezone: formData.timezone,
+        password: formData.password,
+        planId: formData.selectedPlan.id,
+        moyasarPaymentId: moyasarPaymentId,
+      });
+
+      if (response.success) {
+        // Clear saved data
+        sessionStorage.removeItem('sondos_register_data');
+        setStep(4);
+        setTimeout(() => navigate("/"), 3000);
+      }
+    } catch (err) {
+      setError(err.message || 'تم الدفع بنجاح لكن فشل إنشاء الحساب — تواصل مع الدعم');
+    } finally {
+      setRegistering(false);
+    }
+  };
+
   const skipPayment = () => {
-    setStep(4);
-    setTimeout(() => navigate("/"), 2000);
+    // Register without payment (no plan)
+    setLoading(true);
+    authRegister({
+      name: formData.name,
+      email: formData.email,
+      phone: formData.phone,
+      company: formData.company,
+      timezone: formData.timezone,
+      password: formData.password,
+    }).then((response) => {
+      if (response.success) {
+        sessionStorage.removeItem('sondos_register_data');
+        setStep(4);
+        setTimeout(() => navigate("/"), 2000);
+      }
+    }).catch((err) => {
+      setError(err.message || "حدث خطأ");
+    }).finally(() => {
+      setLoading(false);
+    });
   };
 
   // ── Password Strength ──
@@ -550,7 +662,7 @@ export default function RegisterPage() {
               </div>
             )}
 
-            {/* Progress: 3 steps if plan selected, 2 if not */}
+            {/* Progress */}
             <div className="flex items-center justify-center gap-2 mb-8">
               {[1, 2, ...(formData.selectedPlan ? [3] : [])].map((s) => (
                 <div key={s} className="flex items-center gap-2">
@@ -734,9 +846,9 @@ export default function RegisterPage() {
                       className="flex-1 py-4 rounded-xl font-bold transition-all transform hover:scale-[1.02] active:scale-[0.98] bg-gradient-to-l from-teal-500 to-cyan-500 hover:from-teal-400 hover:to-cyan-400 text-white shadow-lg shadow-teal-500/25 flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
                     >
                       {loading ? (
-                        <><Loader2 className="w-5 h-5 animate-spin" /> جاري التسجيل...</>
+                        <><Loader2 className="w-5 h-5 animate-spin" /> جاري التحميل...</>
                       ) : formData.selectedPlan ? (
-                        <>إنشاء الحساب والدفع <CreditCard className="w-5 h-5" /></>
+                        <>المتابعة للدفع <CreditCard className="w-5 h-5" /></>
                       ) : (
                         "إنشاء الحساب"
                       )}
@@ -757,7 +869,7 @@ export default function RegisterPage() {
         )}
 
         {/* ═══════════════════════════════════════════
-            Step 3: Payment (Moyasar)
+            Step 3: Payment (Moyasar) — NO registration yet
         ═══════════════════════════════════════════ */}
         {step === 3 && (
           <div className="w-full max-w-md mx-auto space-y-6">
@@ -767,44 +879,55 @@ export default function RegisterPage() {
                 <CreditCard className="w-8 h-8 text-white" />
               </div>
               <h1 className={`text-2xl font-bold mb-2 ${isDark ? 'text-white' : 'text-gray-900'}`}>
-                إتمام الدفع
+                {registering ? 'جاري إنشاء حسابك...' : 'إتمام الدفع'}
               </h1>
               <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
-                تم إنشاء حسابك بنجاح! أكمل الدفع لتفعيل الباقة
+                {registering
+                  ? 'تم الدفع بنجاح! جاري إعداد حسابك والربط بالمنصة...'
+                  : 'ادفع الآن لإنشاء حسابك وتفعيل الباقة'
+                }
               </p>
             </div>
 
-            {/* Order Summary */}
-            <div className={`rounded-2xl p-6 ${isDark ? 'bg-[#111113] border border-[#1f1f23]' : 'bg-white border border-gray-200 shadow-sm'}`}>
-              <h3 className={`text-lg font-bold mb-3 ${isDark ? 'text-white' : 'text-gray-900'}`}>ملخص الطلب</h3>
-              <div className={`flex justify-between items-center p-4 rounded-xl ${isDark ? 'bg-[#0a0a0b]' : 'bg-gray-50'}`}>
-                <span className={isDark ? 'text-gray-300' : 'text-gray-700'}>{formData.selectedPlan?.name}</span>
-                <span className={`font-bold ${isDark ? 'text-white' : 'text-gray-900'}`}>
-                  {paymentData?.payment?.amountDisplay || formData.selectedPlan?.priceDisplay} ر.س
-                </span>
+            {/* Registering Spinner */}
+            {registering && (
+              <div className="flex flex-col items-center justify-center py-8">
+                <Loader2 className={`w-12 h-12 animate-spin mb-4 ${isDark ? 'text-teal-500' : 'text-teal-600'}`} />
+                <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                  يرجى الانتظار — هذا قد يستغرق بضع ثوانٍ...
+                </p>
               </div>
-              <div className={`flex justify-between items-center mt-3 pt-3 border-t ${isDark ? 'border-[#1f1f23]' : 'border-gray-200'}`}>
-                <span className={`font-bold ${isDark ? 'text-white' : 'text-gray-900'}`}>الإجمالي</span>
-                <span className="text-xl font-black text-teal-500">
-                  {paymentData?.payment?.amountDisplay || formData.selectedPlan?.priceDisplay} ر.س
-                </span>
-              </div>
-            </div>
+            )}
 
-            {/* Moyasar Form */}
-            <div className={`rounded-2xl p-6 ${isDark ? 'bg-[#111113] border border-[#1f1f23]' : 'bg-white border border-gray-200 shadow-sm'}`}>
-              <h3 className={`text-lg font-bold mb-4 flex items-center gap-2 ${isDark ? 'text-white' : 'text-gray-900'}`}>
-                <CreditCard className="w-5 h-5 text-teal-500" />
-                بيانات الدفع
-              </h3>
-              {paymentCreating ? (
-                <div className="flex items-center justify-center py-8">
-                  <Loader2 className={`w-8 h-8 animate-spin ${isDark ? 'text-teal-500' : 'text-teal-600'}`} />
+            {/* Order Summary */}
+            {!registering && (
+              <>
+                <div className={`rounded-2xl p-6 ${isDark ? 'bg-[#111113] border border-[#1f1f23]' : 'bg-white border border-gray-200 shadow-sm'}`}>
+                  <h3 className={`text-lg font-bold mb-3 ${isDark ? 'text-white' : 'text-gray-900'}`}>ملخص الطلب</h3>
+                  <div className={`flex justify-between items-center p-4 rounded-xl ${isDark ? 'bg-[#0a0a0b]' : 'bg-gray-50'}`}>
+                    <span className={isDark ? 'text-gray-300' : 'text-gray-700'}>{formData.selectedPlan?.name}</span>
+                    <span className={`font-bold ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                      {formData.selectedPlan?.priceDisplay} ر.س
+                    </span>
+                  </div>
+                  <div className={`flex justify-between items-center mt-3 pt-3 border-t ${isDark ? 'border-[#1f1f23]' : 'border-gray-200'}`}>
+                    <span className={`font-bold ${isDark ? 'text-white' : 'text-gray-900'}`}>الإجمالي</span>
+                    <span className="text-xl font-black text-teal-500">
+                      {formData.selectedPlan?.priceDisplay} ر.س
+                    </span>
+                  </div>
                 </div>
-              ) : (
-                <div className="mysr-form"></div>
-              )}
-            </div>
+
+                {/* Moyasar Form */}
+                <div className={`rounded-2xl p-6 ${isDark ? 'bg-[#111113] border border-[#1f1f23]' : 'bg-white border border-gray-200 shadow-sm'}`}>
+                  <h3 className={`text-lg font-bold mb-4 flex items-center gap-2 ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                    <CreditCard className="w-5 h-5 text-teal-500" />
+                    بيانات الدفع
+                  </h3>
+                  <div className="mysr-form"></div>
+                </div>
+              </>
+            )}
 
             {error && (
               <div className={`flex items-center gap-2 px-4 py-3 rounded-xl ${isDark ? 'bg-red-500/10 border border-red-500/20 text-red-400' : 'bg-red-50 border border-red-200 text-red-600'}`}>
@@ -813,15 +936,19 @@ export default function RegisterPage() {
             )}
 
             {/* Security + Skip */}
-            <div className={`flex items-center justify-center gap-2 text-sm ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
-              <Shield className="w-4 h-4" /><span>دفع آمن ومشفر</span><Lock className="w-4 h-4" /><span>PCI DSS</span>
-            </div>
+            {!registering && (
+              <>
+                <div className={`flex items-center justify-center gap-2 text-sm ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
+                  <Shield className="w-4 h-4" /><span>دفع آمن ومشفر</span><Lock className="w-4 h-4" /><span>PCI DSS</span>
+                </div>
 
-            <button onClick={skipPayment}
-              className={`w-full py-3 rounded-xl text-sm font-medium transition-all ${isDark ? 'text-gray-500 hover:text-gray-400 hover:bg-[#1a1a1d]' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50'}`}
-            >
-              تخطي الدفع الآن — يمكنك الدفع لاحقاً من لوحة التحكم
-            </button>
+                <button onClick={skipPayment} disabled={loading}
+                  className={`w-full py-3 rounded-xl text-sm font-medium transition-all ${isDark ? 'text-gray-500 hover:text-gray-400 hover:bg-[#1a1a1d]' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50'}`}
+                >
+                  {loading ? 'جاري التسجيل...' : 'تخطي الدفع — سجل بدون باقة'}
+                </button>
+              </>
+            )}
           </div>
         )}
 

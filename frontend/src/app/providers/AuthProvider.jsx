@@ -61,6 +61,15 @@ export function AuthProvider({ children }) {
     return response;
   }, []);
 
+  const registerWithPayment = useCallback(async (userData) => {
+    const response = await authAPI.registerWithPayment(userData);
+    if (response.success && response.data) {
+      setUser(response.data.user);
+      setIsAuthenticated(true);
+    }
+    return response;
+  }, []);
+
   const logout = useCallback(() => {
     forceLogout();
   }, [forceLogout]);
@@ -81,6 +90,7 @@ export function AuthProvider({ children }) {
       isLoading,
       login,
       register,
+      registerWithPayment,
       logout,
       refreshUser,
       userType: user?.role || 'client',

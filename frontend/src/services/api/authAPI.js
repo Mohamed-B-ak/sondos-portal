@@ -22,6 +22,22 @@ export const authAPI = {
     return response;
   },
 
+  /**
+   * Register WITH payment — calls siyadah to setup account + plan
+   * Flow: Moyasar payment completed → verify + create user + setup on siyadah
+   */
+  registerWithPayment: async (userData) => {
+    const response = await apiCall('/auth/register-with-payment', {
+      method: 'POST',
+      body: JSON.stringify(userData),
+    });
+    if (response.success && response.data) {
+      setToken(response.data.token);
+      setStoredUser(response.data.user);
+    }
+    return response;
+  },
+
   login: async (email, password) => {
     const response = await apiCall('/auth/login', {
       method: 'POST',

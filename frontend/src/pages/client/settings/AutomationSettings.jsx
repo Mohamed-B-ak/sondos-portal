@@ -1,15 +1,17 @@
 import { useState, useEffect } from "react";
 import {
   Power, Loader2, CheckCircle, AlertCircle,
-  Shield, Wifi, WifiOff, Copy, Check, ExternalLink
+  Shield, Wifi, WifiOff, Copy, Check, ExternalLink, Key, Eye, EyeOff
 } from "lucide-react";
 import { useTheme } from "@/hooks/useTheme";
 import { useLanguage } from "@/hooks/useLanguage";
 import { apiCall } from "@/services/api/httpClient";
+import { useAuth } from "@/hooks/useAuth";
 
 export default function AutomationSettings() {
   const { isDark } = useTheme();
   const { t, isAr } = useLanguage();
+  const { user } = useAuth();
 
   const [loading, setLoading] = useState(true);
   const [toggling, setToggling] = useState(false);
@@ -17,6 +19,9 @@ export default function AutomationSettings() {
   const [showConfirm, setShowConfirm] = useState(false);
   const [message, setMessage] = useState({ type: '', text: '' });
   const [copied, setCopied] = useState(false);
+  const [copiedKey, setCopiedKey] = useState(false);
+  const [showApiKey, setShowApiKey] = useState(false);
+  const [fullApiKey, setFullApiKey] = useState('');
 
   useEffect(() => {
     loadStatus();
@@ -29,10 +34,33 @@ export default function AutomationSettings() {
       if (res.success) {
         setAutomationEnabled(res.data.automationEnabled);
       }
+      // Load full API key for display
+      const keyRes = await apiCall('/user/api-key');
+      if (keyRes.success && keyRes.data) {
+        setFullApiKey(keyRes.data.apiKey || '');
+      }
     } catch (err) {
       console.error('Load automation status error:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleCopyApiKey = async () => {
+    if (!fullApiKey) return;
+    try {
+      await navigator.clipboard.writeText(fullApiKey);
+      setCopiedKey(true);
+      setTimeout(() => setCopiedKey(false), 2000);
+    } catch {
+      const ta = document.createElement('textarea');
+      ta.value = fullApiKey;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      setCopiedKey(true);
+      setTimeout(() => setCopiedKey(false), 2000);
     }
   };
 
@@ -267,6 +295,45 @@ export default function AutomationSettings() {
                 </code>
               </p>
             </div>
+          </div>
+
+          {/* ── Your API Key ── */}
+          <div className={`mt-4 rounded-xl p-4 ${isDark ? 'bg-[#0a0a0b] border border-[#1f1f23]' : 'bg-gray-50 border border-gray-200'}`}>
+            <div className="flex items-center justify-between mb-3">
+              <p className={`text-sm font-medium flex items-center gap-2 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+                <Key className="w-4 h-4 text-teal-500" />
+                {isAr ? 'مفتاح API الخاص بك:' : 'Your API Key:'}
+              </p>
+            </div>
+            {fullApiKey ? (
+              <div className={`flex items-center gap-2 p-3 rounded-lg ${isDark ? 'bg-[#111113] border border-[#2a2a2d]' : 'bg-white border border-gray-200'}`}>
+                <code className={`text-xs flex-1 break-all ${isDark ? 'text-teal-400' : 'text-teal-600'}`} dir="ltr">
+                  {showApiKey ? fullApiKey : fullApiKey.substring(0, 6) + '••••••••••••••••' + fullApiKey.substring(fullApiKey.length - 4)}
+                </code>
+                <button
+                  onClick={() => setShowApiKey(!showApiKey)}
+                  className={`p-2 rounded-lg transition-colors flex-shrink-0 ${isDark ? 'hover:bg-[#1a1a1d] text-gray-400' : 'hover:bg-gray-100 text-gray-500'}`}
+                  title={showApiKey ? (isAr ? 'إخفاء' : 'Hide') : (isAr ? 'إظهار' : 'Show')}
+                >
+                  {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+                <button
+                  onClick={handleCopyApiKey}
+                  className={`p-2 rounded-lg transition-colors flex-shrink-0 ${
+                    copiedKey
+                      ? 'bg-emerald-500/20 text-emerald-500'
+                      : isDark ? 'hover:bg-[#1a1a1d] text-gray-400' : 'hover:bg-gray-100 text-gray-500'
+                  }`}
+                  title={isAr ? 'نسخ' : 'Copy'}
+                >
+                  {copiedKey ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                </button>
+              </div>
+            ) : (
+              <p className={`text-sm ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
+                {isAr ? 'لا يوجد مفتاح API — سيتم إنشاؤه عند تفعيل الباقة' : 'No API key — will be generated when plan is activated'}
+              </p>
+            )}
           </div>
 
           {/* Example response */}

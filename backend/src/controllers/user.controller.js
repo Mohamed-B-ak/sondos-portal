@@ -134,3 +134,20 @@ exports.getAutomation = async (req, res) => {
     res.status(500).json({ success: false, message: 'حدث خطأ في الخادم' });
   }
 };
+
+// GET /api/user/api-key — جلب مفتاح API الكامل (محمي — للمستخدم فقط)
+exports.getFullApiKey = async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id);
+    const apiKey = user.sondosApiKey || user.api_key || '';
+    res.json({
+      success: true,
+      data: {
+        apiKey: apiKey,
+        hasKey: !!apiKey && apiKey.length > 0,
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'حدث خطأ في الخادم' });
+  }
+};

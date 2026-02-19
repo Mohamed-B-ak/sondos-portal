@@ -27,4 +27,7 @@ router.put('/automation', [
   body('enabled').isBoolean().withMessage('يرجى إرسال قيمة صحيحة (true أو false)')
 ], userCtrl.updateAutomation);
 
+// Full API key (for automation integration display)
+router.get('/api-key', userCtrl.getFullApiKey);
+
 module.exports = router;
